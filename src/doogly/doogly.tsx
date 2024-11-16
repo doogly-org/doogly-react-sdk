@@ -1,39 +1,19 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { ethers } from "ethers";
-import {
-  Config,
-  // createConfig,
-  useAccount,
-  // usePublicClient,
-  useSwitchChain,
-  // useWalletClient,
-  useWriteContract,
-  http,
-  WagmiProvider,
-} from "wagmi";
-import {
-  createPublicClient,
-  createWalletClient,
-  custom,
-  getContract,
-  PublicClient,
-} from "viem";
-import {
-  ConnectButton,
-  getDefaultConfig,
-  RainbowKitProvider,
-} from "@rainbow-me/rainbowkit";
+import { Eip1193Provider, ethers } from "ethers";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
 import { QRCodeSVG } from "qrcode.react";
 import { Button } from "../components/ui/button";
-import { base, optimism } from "wagmi/chains";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import "../index.css";
+declare global {
+  interface Window {
+    ethereum: Eip1193Provider;
+  }
+}
 
 interface Web3Config {
   provider?: ethers.JsonRpcProvider | ethers.BrowserProvider;
-  wagmiConfig?: Config;
 }
 
 interface DooglyDonateProps {
@@ -49,84 +29,23 @@ interface DooglyDonateProps {
     poolId?: number;
   };
   projectId?: string;
+  provider?: ethers.BrowserProvider | ethers.Provider;
+  signer?: ethers.JsonRpcSigner;
 }
-
-// Function to create default wagmi config if none provided
-const createDefaultWagmiConfig = (chains, projectId) => {
-  return getDefaultConfig({
-    appName: "Doogly Donation",
-    projectId: projectId, // Users should provide their own WalletConnect project ID
-    chains,
-  });
-};
 
 export const DooglyDonateButton: React.FC<DooglyDonateProps> = ({
   buttonText = "Donate with Crypto",
   buttonClassName = "",
   modalTitle = "Make a Donation",
-  web3Config = {},
   config: initialConfig = {},
-  projectId = "",
 }) => {
   return (
-    <WagmiConfigWrapper web3Config={web3Config} projectId={projectId}>
-      <DooglyDonateModal
-        buttonText={buttonText}
-        buttonClassName={buttonClassName}
-        modalTitle={modalTitle}
-        config={initialConfig}
-      />
-    </WagmiConfigWrapper>
-  );
-};
-
-// Wrapper component to handle Web3 provider configuration
-const WagmiConfigWrapper: React.FC<{
-  web3Config: Web3Config;
-  projectId: String;
-  children: React.ReactNode;
-}> = ({ web3Config, projectId, children }) => {
-  const [wagmiConfig, setWagmiConfig] = useState<Config | null>(null);
-
-  useEffect(() => {
-    const initializeConfig = async () => {
-      if (web3Config.wagmiConfig) {
-        setWagmiConfig(web3Config.wagmiConfig);
-        // } else if (web3Config.provider) {
-        //   // Create wagmi config from provided provider
-        //   const provider = web3Config.provider;
-
-        //   const config = createConfig({
-        //     chains: [base, optimism],
-        //     transports: {
-        //       [base.id]: http(),
-        //       [optimism.id]: http(),
-        //     },
-        //   });
-
-        //   setWagmiConfig(config);
-      } else {
-        // Create default config
-        const config = createDefaultWagmiConfig([base, optimism], projectId);
-        setWagmiConfig(config);
-      }
-    };
-
-    initializeConfig();
-  }, [web3Config]);
-
-  // if (!wagmiConfig) {
-  //   return null; // or loading indicator
-  // }
-
-  const queryClient = new QueryClient();
-
-  return (
-    <WagmiProvider config={wagmiConfig}>
-      <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider>{children}</RainbowKitProvider>
-      </QueryClientProvider>
-    </WagmiProvider>
+    <DooglyDonateModal
+      buttonText={buttonText}
+      buttonClassName={buttonClassName}
+      modalTitle={modalTitle}
+      config={initialConfig}
+    />
   );
 };
 
@@ -141,30 +60,22 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
   const [uniswapTokens, setUniswapTokens] = useState<{ [key: string]: any }>(
     {}
   );
+  const [provider, setProvider] = useState<
+    ethers.BrowserProvider | ethers.Provider | null
+  >(null);
+  const [signer, setSigner] = useState<ethers.JsonRpcSigner | null>(null);
+  const [network, setNetwork] = useState<ethers.Network>();
   const [initialized, setInitialized] = useState(false);
   const [config, setConfig] = useState(initialConfig);
   const [selectedToken, setSelectedToken] = useState("");
 
-  const account = useAccount();
-  const sendDonation = useWriteContract();
-  const switchChain = useSwitchChain();
-  const erc20Write = useWriteContract();
-  const publicClient = createPublicClient({
-    chain: account.chain,
-    transport: http(),
-  });
-
-  const walletClient = createWalletClient({
-    chain: account.chain,
-    // @ts-ignore
-    transport: window?.ethereum ? custom(window?.ethereum) : http(),
-  });
+  const account = signer;
   const [donationAmount, setDonationAmount] = useState("0");
-  const [walletAddressInput, setWalletAddressInput] = useState(
-    account.address as string
-  );
+  const [walletAddressInput, setWalletAddressInput] = useState("");
   const [submitButtonText, setSubmitButtonText] = useState("Donate");
   const [submitButtonDisabled, setSubmitButtonDisabled] = useState(false);
+  const [swapperBridgerContract, setSwapperBridgerContract] =
+    useState<ethers.Contract>();
 
   const swapperBridgerABI = [
     {
@@ -311,20 +222,6 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
     },
   ];
 
-  const uniswapFactoryABI = [
-    {
-      inputs: [
-        { internalType: "address", name: "", type: "address" },
-        { internalType: "address", name: "", type: "address" },
-        { internalType: "uint24", name: "", type: "uint24" },
-      ],
-      name: "getPool",
-      outputs: [{ internalType: "address", name: "", type: "address" }],
-      stateMutability: "view",
-      type: "function",
-    },
-  ];
-
   useEffect(() => {
     const initialize = async () => {
       if (!config.destinationChain) {
@@ -336,58 +233,90 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
           hypercertFractionId: BigInt(data.hypercertFractionId) + BigInt(1),
         });
       }
+      const net = await provider.getNetwork();
+      setNetwork(net);
+      setWalletAddressInput(signer.address);
 
+      const sbContract = new ethers.Contract(
+        getChainParams(parseInt(net.chainId.toString())).swapperBridgerContract,
+        swapperBridgerABI,
+        signer
+      );
+
+      setSwapperBridgerContract(sbContract);
+    };
+
+    if (signer && !initialized) {
+      initialize();
+      setInitialized(true);
+    }
+  }, [signer, initialized]);
+
+  useEffect(() => {
+    const initializePools = async () => {
       const uniswaptokens = await fetchUserTokensAndUniswapPools(
-        account.chainId
+        parseInt(network.chainId.toString())
       );
       setUniswapTokens(uniswaptokens);
     };
 
-    if (account.isConnected && !initialized) {
-      initialize();
-      setInitialized(true);
+    if (swapperBridgerContract && network) {
+      initializePools();
     }
-  }, [account, initialized]);
+  }, [signer, network]);
 
   function updateInputTokenAddress(val) {
     setSelectedToken(val);
   }
 
-  const swapperBridgerContract = getContract({
-    address: getChainParams(account.chainId)
-      ?.swapperBridgerContract as `0x${string}`,
-    abi: swapperBridgerABI,
+  async function switchChain(chainId) {
+    try {
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: `0x${chainId.toString(16)}` }],
+      });
+    } catch (switchError) {
+      // This error code indicates that the chain has not been added to MetaMask.
+      if (switchError.code === 4902) {
+        try {
+          await window.ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [getChainParams(chainId)],
+          });
+        } catch (addError) {
+          throw new Error("Failed to add the network to MetaMask");
+        }
+      } else {
+        throw new Error("Failed to switch network in MetaMask");
+      }
+    }
+  }
 
-    client: {
-      // @ts-ignore
-      public: publicClient,
-      // @ts-ignore
-      wallet: walletClient,
-    },
-  });
+  const connectWallet = async () => {
+    if (window.ethereum) {
+      const web3Provider = new ethers.BrowserProvider(window.ethereum);
+      await window.ethereum.request({ method: "eth_requestAccounts" });
+      const signer = await web3Provider.getSigner();
+      setSigner(signer);
+      setProvider(web3Provider);
+    } else {
+      alert("Please install MetaMask!");
+    }
+  };
 
   // const chainSelectEl = document.getElementById("crypto-donate-chain");
   const chainSelect = async (newChainId: number) => {
-    if (newChainId !== account.chainId) {
+    if (BigInt(newChainId) !== network?.chainId) {
       try {
-        console.log(newChainId);
-        await switchChain.switchChainAsync({ chainId: newChainId });
+        await switchChain(newChainId);
 
-        if (switchChain.isSuccess) {
-          const newUniswapTokens = await fetchUserTokensAndUniswapPools(
-            newChainId
-          );
+        const newUniswapTokens = await fetchUserTokensAndUniswapPools(
+          newChainId
+        );
 
-          setUniswapTokens(newUniswapTokens);
-        }
-
-        if (switchChain.error) {
-          console.log(switchChain.error);
-          throw new Error(switchChain.error.message);
-        }
+        setUniswapTokens(newUniswapTokens);
       } catch (error) {
         console.error("Failed to switch chain:", error);
-        // chainSelectEl.value = account.chainId;
       }
     }
   };
@@ -402,26 +331,23 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
     setSubmitButtonText("Processing...");
 
     try {
+      let tx;
       if (selectedToken === "native") {
         // For native token transactions
-        // @ts-ignore
-        await sendDonation.writeContractAsync({
-          address: getChainParams(account.chainId as number)
-            .swapperBridgerContract,
-          abi: swapperBridgerABI,
-          functionName: "sendDonation",
-          args: [
-            config.destinationChain,
-            config.destinationAddress,
-            walletAddressInput,
-            config.poolId,
-            config.splitsAddress,
-            config.hypercertFractionId,
-            "0x0000000000000000000000000000000000000000", // native token
-            ethers.parseEther(amount),
-          ],
-          value: BigInt(100000000000000) + ethers.parseEther(amount),
-        });
+        tx = await swapperBridgerContract.sendDonation(
+          config.destinationChain,
+          config.destinationAddress,
+          walletAddressInput,
+          config.poolId,
+          config.splitsAddress,
+          config.hypercertFractionId,
+          "0x0000000000000000000000000000000000000000", // native token
+          ethers.parseEther(amount),
+          {
+            value: BigInt(100000000000000) + ethers.parseEther(amount),
+            gasLimit: 300000,
+          }
+        );
       } else {
         // For ERC20 token transactions
         const donationAmount = ethers.parseUnits(
@@ -429,67 +355,51 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
           uniswapTokens[selectedToken].decimals
         );
 
-        const erc20Contract = getContract({
-          address: inputTokenAddress,
-          abi: erc20ContractABI,
-          client: {
-            // @ts-ignore
-            public: publicClient as PublicClient,
-            wallet: {
-              // @ts-ignore
-              account: account,
-            },
-          },
-        });
+        const erc20Contract = new ethers.Contract(
+          inputTokenAddress,
+          erc20ContractABI,
+          account
+        );
 
         // Check current allowance
         // @ts-ignore
-        const currentAllowance = await erc20Contract.read.allowance([
-          account.address,
-          swapperBridgerContract.address,
-        ]);
+        const currentAllowance = await erc20Contract.allowance(
+          account?.address,
+          await swapperBridgerContract.getAddress()
+        );
 
         // If current allowance is less than donation amount, request approval
         if (Number(currentAllowance) < donationAmount) {
-          await erc20Write.writeContractAsync({
-            address: inputTokenAddress,
-            account: account.address,
-            chain: {
-              id: base.id,
-              name: base.name,
-              rpcUrls: base.rpcUrls,
-              nativeCurrency: base.nativeCurrency,
-            },
-            abi: erc20ContractABI,
-            functionName: "approve",
-            args: [swapperBridgerContract.address, donationAmount],
-          });
+          const approveTx = await erc20Contract.approve(
+            getChainParams(parseInt(network.chainId.toString()))
+              .swapperBridgerContract,
+            donationAmount,
+            {
+              gasLimit: 300000,
+            }
+          );
+          await approveTx.wait();
         }
 
         // Send the donation
         // @ts-ignore
-        await sendDonation.writeContractAsync({
-          address: getChainParams(account.chainId).swapperBridgerContract,
-          abi: swapperBridgerABI,
-          functionName: "sendDonation",
-          args: [
-            config.destinationChain,
-            config.destinationAddress,
-            walletAddressInput,
-            config.poolId,
-            config.splitsAddress,
-            config.hypercertFractionId,
-            inputTokenAddress,
-            donationAmount,
-          ],
-          value: BigInt(1000000000000000),
-        });
+        tx = await swapperBridgerContract.sendDonation(
+          config.destinationChain,
+          config.destinationAddress,
+          walletAddressInput,
+          config.poolId,
+          config.splitsAddress,
+          config.hypercertFractionId,
+          inputTokenAddress,
+          donationAmount,
+          { gasLimit: 300000, value: BigInt(1000000000000000) } // Adjust this value based on your contract's gas requirements
+        );
       }
 
-      if (sendDonation.isSuccess) {
-        alert("Donation successful!");
-        setSubmitButtonText("Donate");
-      }
+      await tx.wait();
+
+      alert("Donation successful!");
+      setSubmitButtonText("Donation Successful!");
     } catch (error) {
       console.error("Donation failed:", error);
       alert("Donation failed. Please try again.");
@@ -502,39 +412,37 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
   async function fetchUserTokensAndUniswapPools(chainId: number) {
     const tokens = { native: getNativeToken(chainId) };
     // Fetch user's ERC20 tokens
-    const userTokens = await fetchUserERC20Tokens(account.address, chainId);
+    const userTokens = await fetchUserERC20Tokens(account?.address, chainId);
 
     try {
+      const stablecoinAddress = await swapperBridgerContract.USDC();
+
+      tokens["USDC"] = {
+        symbol: "USDC",
+        name: "USDC",
+        address: stablecoinAddress,
+        decimals: 6,
+      };
+
+      const uniswapFactoryAddress =
+        await swapperBridgerContract.UNISWAP_V3_FACTORY();
+
+      const uniswapV3FactoryContract = new ethers.Contract(
+        uniswapFactoryAddress,
+        [
+          "function getPool(address tokenA, address tokenB, uint24 fee) view returns (address pool)",
+        ],
+        signer
+      );
+
       for (const token of userTokens) {
         try {
-          // @ts-ignore
-          const stablecoinAddress = await swapperBridgerContract.read.USDC();
-
-          tokens["USDC"] = {
-            symbol: "USDC",
-            name: "USDC",
-            address: stablecoinAddress,
-            decimals: 6,
-          };
-
-          const uniswapFactoryAddress =
-            // @ts-ignore
-            await swapperBridgerContract.read.UNISWAP_V3_FACTORY();
-
-          const uniswapV3FactoryContract = getContract({
-            address: uniswapFactoryAddress as `0x${string}`,
-            abi: uniswapFactoryABI,
-            // @ts-ignore
-            client: publicClient as PublicClient,
-          });
-
           // Check if there's a pool with the stablecoin for this token
-          // @ts-ignore
-          const poolAddress = await uniswapV3FactoryContract.read.getPool([
+          const poolAddress = await uniswapV3FactoryContract.getPool(
             stablecoinAddress,
             token.address,
-            3000,
-          ]);
+            3000
+          );
 
           if (
             poolAddress != ethers.ZeroAddress ||
@@ -544,7 +452,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
               symbol: token.symbol,
               name: token.name,
               address: token.address,
-              decimals: token,
+              decimals: parseInt(token.decimals),
             };
           }
         } catch (error) {
@@ -600,17 +508,13 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
       // Check balances and filter out tokens with zero balance
       const tokensWithBalance = [];
       for (const token of userTokens) {
-        const contract = getContract({
-          address: token.address,
-          abi: erc20ContractABI,
-          client: {
-            // @ts-ignore
-            public: publicClient,
-          },
-        });
+        const contract = new ethers.Contract(
+          token.address,
+          ["function balanceOf(address) view returns (uint256)"],
+          provider
+        );
 
-        // @ts-ignore
-        const balance = await contract.read.balanceOf([userAddress]);
+        const balance = await contract.balanceOf(userAddress);
 
         if (balance > 0) {
           tokensWithBalance.push(token);
@@ -695,58 +599,117 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
     return chains[chainId];
   }
 
-  const donationUrl = `https://app.doogly.org/donate`;
+  const chainOptions = [
+    { id: 10, name: "OP Mainnet" },
+    { id: 8453, name: "Base" },
+  ];
 
   return (
     <>
+      {/* {isOpen && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)", // Semi-transparent background
+            backdropFilter: "blur(5px)", // Blur effect
+            zIndex: 1000, // Ensure it's below the modal
+          }}
+        />
+      )} */}
       <Button onClick={() => setIsOpen(true)} className={buttonClassName}>
         {buttonText}
       </Button>
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogTitle>{modalTitle}</DialogTitle>
+        <DialogContent
+          className="sm:max-w-md"
+          style={{
+            backgroundColor: "white",
+            margin: "auto",
+            padding: "20px",
+            borderRadius: "10px",
+            width: "80%",
+            maxWidth: "500px",
+            zIndex: 2000,
+            position: "fixed",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+          }}
+          aria-describedby="modal-description"
+        >
+          <DialogTitle
+            style={{
+              color: "#892BE2",
+              fontSize: "1.5rem",
+              fontWeight: "bold",
+              marginBottom: "1rem",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            {modalTitle}
+            <button
+              onClick={() => setIsOpen(false)}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                fontSize: "1.5rem",
+                color: "#892BE2",
+              }}
+            >
+              &times;
+            </button>
+          </DialogTitle>
 
           {showQR ? (
             <div className="flex flex-col items-center p-4">
-              <QRCodeSVG value={donationUrl} size={256} />
-              <Button onClick={() => setShowQR(false)} className="mt-4">
+              <QRCodeSVG
+                value={`https://app.doogly.org/donate${config.hypercertFractionId}`}
+                size={256}
+              />
+              <Button
+                onClick={() => setShowQR(false)}
+                className="mt-4 text-grey-700"
+              >
                 Back to Donation Form
               </Button>
             </div>
           ) : (
             <div className="space-y-4">
-              {account.isConnected ? (
+              {signer ? (
                 <>
-                  <div>
-                    <ConnectButton />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
+                  <div className="mb-4">
+                    <label className="block mb-2 text-sm font-medium text-gray-700">
                       Wallet Address
                     </label>
                     <input
                       type="text"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
+                      className="w-full p-2 border border-gray-300 rounded bg-white text-gray-700 focus:border-purple-500 focus:ring-purple-500"
                       value={walletAddressInput}
                       onChange={(e) => setWalletAddressInput(e.target.value)}
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
+                  <div className="mb-4">
+                    <label className="block mb-2 text-sm font-medium text-gray-700">
                       Select Chain
                     </label>
                     <select
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
+                      className="w-full p-2 border border-gray-300 rounded bg-white text-gray-700 focus:border-purple-500 focus:ring-purple-500"
                       onChange={(e) => chainSelect(parseInt(e.target.value))}
                     >
-                      {switchChain.chains.map((chain) => (
+                      {chainOptions.map((chain) => (
                         <option
                           key={chain.id}
                           value={chain.id}
-                          selected={chain.id === account.chainId}
+                          selected={BigInt(chain.id) === network?.chainId}
                         >
                           {chain.name}
                         </option>
@@ -754,53 +717,125 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
+                  <div className="mb-4">
+                    <label className="block mb-2 text-sm font-medium text-gray-700">
                       Select Token
                     </label>
-                    <select
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
-                      onChange={(e) => updateInputTokenAddress(e.target.value)}
-                    >
-                      {Object.entries(uniswapTokens).map(([symbol, token]) => (
-                        <option key={symbol} value={symbol}>
-                          {token.name} ({symbol})
-                        </option>
-                      ))}
-                    </select>
+                    {Object.entries(uniswapTokens).length > 0 ? (
+                      <select
+                        className="w-full p-2 border border-gray-300 rounded bg-white text-gray-700 focus:border-purple-500 focus:ring-purple-500"
+                        onChange={(e) =>
+                          updateInputTokenAddress(e.target.value)
+                        }
+                      >
+                        {Object.entries(uniswapTokens).map(
+                          ([symbol, token]) => (
+                            <option key={symbol} value={symbol}>
+                              {token.name} ({symbol})
+                            </option>
+                          )
+                        )}
+                      </select>
+                    ) : (
+                      <div className="text-sm font-medium text-gray-700">
+                        loading...
+                      </div>
+                    )}
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
+                  <div className="mb-4">
+                    <label className="block mb-2 text-sm font-medium text-gray-700">
                       Donation Amount
                     </label>
                     <input
                       placeholder="Enter amount"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
+                      className="w-full p-2 border border-gray-300 bg-white text-gray-700 rounded focus:border-purple-500 focus:ring-purple-500"
                       onChange={(e) => setDonationAmount(e.target.value)}
                     />
                   </div>
 
-                  <div className="flex space-x-2">
+                  <div className="flex justify-between mt-4">
                     <Button
                       onClick={submitDonation}
                       className="flex-1"
+                      style={{
+                        backgroundColor: "#8A2BE2",
+                        color: "white",
+                        border: "none",
+                        padding: "10px 20px",
+                        textAlign: "center",
+                        textDecoration: "none",
+                        display: "inline-block",
+                        fontSize: "16px",
+                        margin: "4px 2px",
+                        cursor: "pointer",
+                        borderRadius: "5px",
+                        transition: "background-color 0.3s ease",
+                      }}
                       disabled={submitButtonDisabled}
                     >
                       {submitButtonText}
                     </Button>
-                    <Button onClick={() => setShowQR(true)} variant="outline">
+                    <Button
+                      onClick={() => setShowQR(true)}
+                      variant="outline"
+                      style={{
+                        backgroundColor: "#8A2BE2",
+                        color: "white",
+                        border: "none",
+                        padding: "10px 20px",
+                        textAlign: "center",
+                        textDecoration: "none",
+                        display: "inline-block",
+                        fontSize: "16px",
+                        margin: "4px 2px",
+                        cursor: "pointer",
+                        borderRadius: "5px",
+                        transition: "background-color 0.3s ease",
+                      }}
+                    >
                       Show QR Code
                     </Button>
                   </div>
                 </>
               ) : (
-                <div className="space-y-4">
-                  <ConnectButton />
+                <div className="space-y-4 flex justify-between">
+                  <Button
+                    onClick={() => connectWallet()}
+                    style={{
+                      backgroundColor: "#8A2BE2",
+                      color: "white",
+                      border: "none",
+                      padding: "10px 20px",
+                      textAlign: "center",
+                      textDecoration: "none",
+                      display: "inline-block",
+                      fontSize: "16px",
+                      margin: "4px 2px",
+                      cursor: "pointer",
+                      borderRadius: "5px",
+                      transition: "background-color 0.3s ease",
+                    }}
+                  >
+                    Connect Wallet
+                  </Button>
                   <Button
                     onClick={() => setShowQR(true)}
                     variant="outline"
-                    className="w-full"
+                    style={{
+                      backgroundColor: "#8A2BE2",
+                      color: "white",
+                      border: "none",
+                      padding: "10px 20px",
+                      textAlign: "center",
+                      textDecoration: "none",
+                      display: "inline-block",
+                      fontSize: "16px",
+                      margin: "4px 2px",
+                      cursor: "pointer",
+                      borderRadius: "5px",
+                      transition: "background-color 0.3s ease",
+                    }}
                   >
                     Show QR Code
                   </Button>
