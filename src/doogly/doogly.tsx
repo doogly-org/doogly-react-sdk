@@ -700,7 +700,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
           {showQR ? (
             <div className="flex flex-col items-center p-4">
               <QRCodeSVG
-                value={`https://app.doogly.org/donate${config.hypercertFractionId}`}
+                value={`https://app.doogly.org/donate/${config.hypercertFractionId}`}
                 size={256}
               />
               <Button
