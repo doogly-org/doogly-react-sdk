@@ -345,7 +345,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
           ethers.parseEther(amount),
           {
             value: BigInt(100000000000000) + ethers.parseEther(amount),
-            gasLimit: 300000,
+            gasLimit: 500000,
           }
         );
       } else {
@@ -375,7 +375,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
               .swapperBridgerContract,
             donationAmount,
             {
-              gasLimit: 300000,
+              gasLimit: 500000,
             }
           );
           await approveTx.wait();
@@ -392,7 +392,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
           config.hypercertFractionId,
           inputTokenAddress,
           donationAmount,
-          { gasLimit: 300000, value: BigInt(1000000000000000) } // Adjust this value based on your contract's gas requirements
+          { gasLimit: 500000, value: BigInt(1000000000000000) } // Adjust this value based on your contract's gas requirements
         );
       }
 
