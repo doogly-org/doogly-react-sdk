@@ -31,6 +31,12 @@ interface DooglyDonateProps {
   projectId?: string;
   provider?: ethers.BrowserProvider | ethers.Provider;
   signer?: ethers.JsonRpcSigner;
+  modalStyles?: {
+    backgroundColor?: string;
+    headingColor?: string;
+    textColor?: string;
+    buttonColor?: string;
+  };
 }
 
 export const DooglyDonateButton: React.FC<DooglyDonateProps> = ({
@@ -38,6 +44,7 @@ export const DooglyDonateButton: React.FC<DooglyDonateProps> = ({
   buttonClassName = "",
   modalTitle = "Make a Donation",
   config: initialConfig = {},
+  modalStyles = {},
 }) => {
   return (
     <DooglyDonateModal
@@ -45,6 +52,7 @@ export const DooglyDonateButton: React.FC<DooglyDonateProps> = ({
       buttonClassName={buttonClassName}
       modalTitle={modalTitle}
       config={initialConfig}
+      modalStyles={modalStyles}
     />
   );
 };
@@ -54,6 +62,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
   buttonClassName,
   modalTitle,
   config: initialConfig,
+  modalStyles,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [showQR, setShowQR] = useState(false);
@@ -657,7 +666,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
         <DialogContent
           className="sm:max-w-md"
           style={{
-            backgroundColor: "white",
+            backgroundColor: modalStyles.backgroundColor || "white",
             margin: "auto",
             padding: "20px",
             borderRadius: "10px",
@@ -673,7 +682,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
         >
           <DialogTitle
             style={{
-              color: "#892BE2",
+              color: modalStyles.headingColor || "#892BE2",
               fontSize: "1.5rem",
               fontWeight: "bold",
               marginBottom: "1rem",
@@ -690,7 +699,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
                 border: "none",
                 cursor: "pointer",
                 fontSize: "1.5rem",
-                color: "#892BE2",
+                color: modalStyles.headingColor || "#892BE2",
               }}
             >
               &times;
@@ -788,7 +797,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
                       onClick={submitDonation}
                       className="flex-1"
                       style={{
-                        backgroundColor: "#8A2BE2",
+                        backgroundColor: modalStyles.buttonColor || "#8A2BE2",
                         color: "white",
                         border: "none",
                         padding: "10px 20px",
@@ -809,7 +818,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
                       onClick={() => setShowQR(true)}
                       variant="outline"
                       style={{
-                        backgroundColor: "#8A2BE2",
+                        backgroundColor: modalStyles.buttonColor || "#8A2BE2",
                         color: "white",
                         border: "none",
                         padding: "10px 20px",
@@ -832,7 +841,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
                   <Button
                     onClick={() => connectWallet()}
                     style={{
-                      backgroundColor: "#8A2BE2",
+                      backgroundColor: modalStyles.buttonColor || "#8A2BE2",
                       color: "white",
                       border: "none",
                       padding: "10px 20px",
@@ -852,7 +861,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
                     onClick={() => setShowQR(true)}
                     variant="outline"
                     style={{
-                      backgroundColor: "#8A2BE2",
+                      backgroundColor: modalStyles.buttonColor || "#8A2BE2",
                       color: "white",
                       border: "none",
                       padding: "10px 20px",
