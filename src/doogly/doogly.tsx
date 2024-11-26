@@ -1,5 +1,3 @@
-"use client";
-
 import React, { useEffect, useState } from "react";
 import { Eip1193Provider, ethers } from "ethers";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
@@ -24,6 +22,7 @@ interface DooglyDonateProps {
   config?: {
     destinationChain?: string;
     destinationAddress?: string;
+    destinationOutputTokenAddress?: string;
     splitsAddress?: string;
     hypercertFractionId?: string;
     poolId?: number;
@@ -231,16 +230,44 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
     },
   ];
 
+  const QRLink = `https://app.doogly.org/donate/${config.hypercertFractionId}`;
+
   useEffect(() => {
     const initialize = async () => {
       if (!config.destinationChain) {
-        // Fetch default config if not provided
-        const response = await fetch(`https://app.doogly.org/api`);
-        const data = await response.json();
-        setConfig({
-          ...data,
-          hypercertFractionId: BigInt(data.hypercertFractionId) + BigInt(1),
-        });
+        try {
+          const response = await fetch(
+            `https://app.doogly.org/api?id=${config.hypercertFractionId}`
+          );
+
+          const text = await response.text(); // Get the response as text
+
+          if (!response.ok) {
+            throw new Error(
+              `Failed to fetch default config: ${response.statusText}`
+            );
+          }
+
+          if (text.trim() === "") {
+            throw new Error("Received empty response from API");
+          }
+
+          const contentType = response.headers.get("content-type");
+          if (!contentType || !contentType.includes("application/json")) {
+            throw new Error(
+              "Expected JSON response but received: " + contentType
+            );
+          }
+
+          const data = JSON.parse(text); // Parse the text as JSON
+          setConfig({
+            ...data,
+            hypercertFractionId: BigInt(data.hypercertFractionId) + BigInt(1),
+          });
+        } catch (error) {
+          console.error("Error initializing config:", error);
+          // Handle the error appropriately (e.g., set default config, alert user, etc.)
+        }
       }
       const net = await provider.getNetwork();
       setNetwork(net);
@@ -351,6 +378,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
           config.splitsAddress,
           config.hypercertFractionId,
           "0x0000000000000000000000000000000000000000", // native token
+          config.destinationOutputTokenAddress,
           ethers.parseEther(amount),
           {
             value: BigInt(100000000000000) + ethers.parseEther(amount),
@@ -400,6 +428,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
           config.splitsAddress,
           config.hypercertFractionId,
           inputTokenAddress,
+          config.destinationOutputTokenAddress,
           donationAmount,
           { gasLimit: 500000, value: BigInt(1000000000000000) } // Adjust this value based on your contract's gas requirements
         );
@@ -598,7 +627,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
         nativeCurrency: { name: "Ethereum", symbol: "ETH", decimals: 18 },
         rpcUrls: ["https://mainnet.optimism.io"],
         blockExplorerUrls: ["https://optimistic.etherscan.io"],
-        swapperBridgerContract: "0x8a4c14d50c43363a28647188534db7004112091c",
+        swapperBridgerContract: "0x3652eC40C4D8F3e804373455EF155777F250a6E2",
         hyperMinter: "0x822F17A9A5EeCFd66dBAFf7946a8071C265D1d07",
       },
       8453: {
@@ -608,7 +637,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
         nativeCurrency: { name: "Ethereum", symbol: "ETH", decimals: 18 },
         rpcUrls: ["https://mainnet.base.org"],
         blockExplorerUrls: ["https://basescan.org"],
-        swapperBridgerContract: "0xeD99908D0697C408b26Ba35fE0800e565042c858",
+        swapperBridgerContract: "0xe0E84235511aC6437C756C1d70e8cCdd8917df36",
         hyperMinter: "0xC2d179166bc9dbB00A03686a5b17eCe2224c2704",
       },
       42220: {
@@ -618,7 +647,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
         nativeCurrency: { name: "Celo", symbol: "CELO", decimals: 18 },
         rpcUrls: ["https://forno.celo.org"],
         blockExplorerUrls: ["https://explorer.celo.org"],
-        swapperBridgerContract: "0x1e1461464852d6fbf8a19097d14408d657d49457",
+        swapperBridgerContract: "0xFa1aD6310C6540c5430F9ddA657FCE4BdbF1f4df",
         hyperMinter: "0x16bA53B74c234C870c61EFC04cD418B8f2865959",
       },
       42161: {
@@ -628,7 +657,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
         nativeCurrency: { name: "Ethereum", symbol: "ETH", decimals: 18 },
         rpcUrls: ["https://arb1.arbitrum.io/rpc"],
         blockExplorerUrls: ["https://arbiscan.io"],
-        swapperBridgerContract: "0x51d952a5a93e73096b9b6f807ec37aa7a2fc52da",
+        swapperBridgerContract: "0xb66f6DAC6F61446FD88c146409dA6DA8F8F10f73",
         hyperMinter: "0x822F17A9A5EeCFd66dBAFf7946a8071C265D1d07",
       },
     };
@@ -708,10 +737,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
 
           {showQR ? (
             <div className="flex flex-col items-center p-4">
-              <QRCodeSVG
-                value={`https://app.doogly.org/donate/${config.hypercertFractionId}`}
-                size={256}
-              />
+              <QRCodeSVG value={QRLink} size={256} />
               <Button
                 onClick={() => setShowQR(false)}
                 className="mt-4 text-grey-700"
