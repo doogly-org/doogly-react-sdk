@@ -4,11 +4,267 @@ import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
 import { QRCodeSVG } from "qrcode.react";
 import { Button } from "../components/ui/button";
 import "../index.css";
+
 declare global {
   interface Window {
     ethereum: Eip1193Provider;
   }
 }
+
+const swapperBridgerABI = [
+  {
+    inputs: [],
+    name: "USDC",
+    outputs: [
+      {
+        internalType: "address",
+        name: "",
+        type: "address",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "string",
+        name: "destinationChain",
+        type: "string",
+      },
+      {
+        internalType: "string",
+        name: "destinationAddress",
+        type: "string",
+      },
+      {
+        internalType: "address",
+        name: "hcRecipientAddress",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "poolId",
+        type: "uint256",
+      },
+      {
+        internalType: "address payable",
+        name: "_splitsAddress",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "_hypercertFractionId",
+        type: "uint256",
+      },
+      {
+        internalType: "address",
+        name: "inputTokenAddress",
+        type: "address",
+      },
+      {
+        internalType: "address",
+        name: "destinationOutputTokenAddress",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
+      },
+    ],
+    name: "sendDonation",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "UNISWAP_V3_FACTORY",
+    outputs: [
+      {
+        internalType: "address",
+        name: "",
+        type: "address",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+];
+
+const erc20ContractABI = [
+  {
+    constant: false,
+    inputs: [
+      {
+        name: "_spender",
+        type: "address",
+      },
+      {
+        name: "_value",
+        type: "uint256",
+      },
+    ],
+    name: "approve",
+    outputs: [
+      {
+        name: "",
+        type: "bool",
+      },
+    ],
+    payable: false,
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    constant: true,
+    inputs: [
+      {
+        name: "_owner",
+        type: "address",
+      },
+    ],
+    name: "balanceOf",
+    outputs: [
+      {
+        name: "balance",
+        type: "uint256",
+      },
+    ],
+    payable: false,
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    constant: true,
+    inputs: [
+      {
+        name: "_owner",
+        type: "address",
+      },
+      {
+        name: "_spender",
+        type: "address",
+      },
+    ],
+    name: "allowance",
+    outputs: [
+      {
+        name: "",
+        type: "uint256",
+      },
+    ],
+    payable: false,
+    stateMutability: "view",
+    type: "function",
+  },
+];
+
+function getNativeToken(chainId: number) {
+  const nativeTokens = {
+    10: {
+      symbol: "ETH",
+      name: "Ethereum",
+      address: "0x0000000000000000000000000000000000000000",
+    },
+    8453: {
+      symbol: "ETH",
+      name: "Ethereum",
+      address: "0x0000000000000000000000000000000000000000",
+    },
+    42220: {
+      symbol: "CELO",
+      name: "Celo",
+      address: "0x471EcE3750Da237f93B8E339c536989b8978a438",
+    },
+    42161: {
+      symbol: "ETH",
+      name: "Ethereum",
+      address: "0x0000000000000000000000000000000000000000",
+    },
+  };
+  return (
+    nativeTokens[chainId] || {
+      symbol: "NATIVE",
+      name: "Native Token",
+      address: "0x0000000000000000000000000000000000000000",
+    }
+  );
+}
+
+function getExplorerApiUrl(chainId: number) {
+  const apiUrls = {
+    10: "https://api-optimistic.etherscan.io/api",
+    8453: "https://api.basescan.org/api",
+    42161: "https://api.arbiscan.io/api",
+    42220: "https://api.celoscan.io/api",
+  };
+  return apiUrls[chainId];
+}
+
+function getExplorerApiKey(chainId: number) {
+  const apiKeys = {
+    10: "9HBFD3UFSTQV71132ZASZ4T6M6Y1VHDGKM",
+    8453: "X4R5GNYKKD34HKQGEVC6SXGHI62EGUYNJ8",
+    42220: "4MY7GCBJXMB181R771BY5HRSCAQN2PXTUN",
+    42161: "VU2ZRHTKI2HFMEBAVXV5WSN9KZRGEB8841",
+  };
+  return apiKeys[chainId];
+}
+
+function getChainParams(chainId: number) {
+  const chains = {
+    10: {
+      chainId: "0xA",
+      chainName: "Optimism",
+      AxelarChainName: "optimism",
+      nativeCurrency: { name: "Ethereum", symbol: "ETH", decimals: 18 },
+      rpcUrls: ["https://mainnet.optimism.io"],
+      blockExplorerUrls: ["https://optimistic.etherscan.io"],
+      swapperBridgerContract: "0x3652eC40C4D8F3e804373455EF155777F250a6E2",
+      hyperMinter: "0x822F17A9A5EeCFd66dBAFf7946a8071C265D1d07",
+    },
+    8453: {
+      chainId: "0x2105",
+      chainName: "Base",
+      AxelarChainName: "base",
+      nativeCurrency: { name: "Ethereum", symbol: "ETH", decimals: 18 },
+      rpcUrls: ["https://mainnet.base.org"],
+      blockExplorerUrls: ["https://basescan.org"],
+      swapperBridgerContract: "0xe0E84235511aC6437C756C1d70e8cCdd8917df36",
+      hyperMinter: "0xC2d179166bc9dbB00A03686a5b17eCe2224c2704",
+    },
+    42220: {
+      chainId: "0xA4EC",
+      chainName: "Celo",
+      AxelarChainName: "celo",
+      nativeCurrency: { name: "Celo", symbol: "CELO", decimals: 18 },
+      rpcUrls: ["https://forno.celo.org"],
+      blockExplorerUrls: ["https://explorer.celo.org"],
+      swapperBridgerContract: "0xFa1aD6310C6540c5430F9ddA657FCE4BdbF1f4df",
+      hyperMinter: "0x16bA53B74c234C870c61EFC04cD418B8f2865959",
+    },
+    42161: {
+      chainId: "0xa4b1",
+      chainName: "Arbitrum",
+      AxelarChainName: "arbitrum",
+      nativeCurrency: { name: "Ethereum", symbol: "ETH", decimals: 18 },
+      rpcUrls: ["https://arb1.arbitrum.io/rpc"],
+      blockExplorerUrls: ["https://arbiscan.io"],
+      swapperBridgerContract: "0xb66f6DAC6F61446FD88c146409dA6DA8F8F10f73",
+      hyperMinter: "0x822F17A9A5EeCFd66dBAFf7946a8071C265D1d07",
+    },
+  };
+  return chains[chainId];
+}
+
+const chainOptions = [
+  { id: 10, name: "OP Mainnet" },
+  { id: 8453, name: "Base" },
+  { id: 42220, name: "Celo" },
+  { id: 42161, name: "Arbitrum" },
+];
 
 interface Web3Config {
   provider?: ethers.JsonRpcProvider | ethers.BrowserProvider;
@@ -84,156 +340,6 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
   const [submitButtonDisabled, setSubmitButtonDisabled] = useState(false);
   const [swapperBridgerContract, setSwapperBridgerContract] =
     useState<ethers.Contract>();
-
-  const swapperBridgerABI = [
-    {
-      inputs: [],
-      name: "USDC",
-      outputs: [
-        {
-          internalType: "address",
-          name: "",
-          type: "address",
-        },
-      ],
-      stateMutability: "view",
-      type: "function",
-    },
-    {
-      inputs: [
-        {
-          internalType: "string",
-          name: "destinationChain",
-          type: "string",
-        },
-        {
-          internalType: "string",
-          name: "destinationAddress",
-          type: "string",
-        },
-        {
-          internalType: "address",
-          name: "hcRecipientAddress",
-          type: "address",
-        },
-        {
-          internalType: "uint256",
-          name: "poolId",
-          type: "uint256",
-        },
-        {
-          internalType: "address payable",
-          name: "_splitsAddress",
-          type: "address",
-        },
-        {
-          internalType: "uint256",
-          name: "_hypercertFractionId",
-          type: "uint256",
-        },
-        {
-          internalType: "address",
-          name: "inputTokenAddress",
-          type: "address",
-        },
-        {
-          internalType: "address",
-          name: "destinationOutputTokenAddress",
-          type: "address",
-        },
-        {
-          internalType: "uint256",
-          name: "amount",
-          type: "uint256",
-        },
-      ],
-      name: "sendDonation",
-      outputs: [],
-      stateMutability: "payable",
-      type: "function",
-    },
-    {
-      inputs: [],
-      name: "UNISWAP_V3_FACTORY",
-      outputs: [
-        {
-          internalType: "address",
-          name: "",
-          type: "address",
-        },
-      ],
-      stateMutability: "view",
-      type: "function",
-    },
-  ];
-
-  const erc20ContractABI = [
-    {
-      constant: false,
-      inputs: [
-        {
-          name: "_spender",
-          type: "address",
-        },
-        {
-          name: "_value",
-          type: "uint256",
-        },
-      ],
-      name: "approve",
-      outputs: [
-        {
-          name: "",
-          type: "bool",
-        },
-      ],
-      payable: false,
-      stateMutability: "nonpayable",
-      type: "function",
-    },
-    {
-      constant: true,
-      inputs: [
-        {
-          name: "_owner",
-          type: "address",
-        },
-      ],
-      name: "balanceOf",
-      outputs: [
-        {
-          name: "balance",
-          type: "uint256",
-        },
-      ],
-      payable: false,
-      stateMutability: "view",
-      type: "function",
-    },
-    {
-      constant: true,
-      inputs: [
-        {
-          name: "_owner",
-          type: "address",
-        },
-        {
-          name: "_spender",
-          type: "address",
-        },
-      ],
-      name: "allowance",
-      outputs: [
-        {
-          name: "",
-          type: "uint256",
-        },
-      ],
-      payable: false,
-      stateMutability: "view",
-      type: "function",
-    },
-  ];
 
   const QRLink = `https://app.doogly.org/donate/${config.hypercertFractionId}`;
 
@@ -386,7 +492,10 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
           config.destinationOutputTokenAddress,
           ethers.parseEther(amount),
           {
-            value: BigInt(100000000000000) + ethers.parseEther(amount),
+            value:
+              config.destinationChain == "celo" // TODO: Fix this hack with Axelar gas estimator (after they upgrade to ethers ^6)
+                ? BigInt("500000000000000000") + ethers.parseEther(amount)
+                : BigInt(100000000000000) + ethers.parseEther(amount),
             gasLimit: 500000,
           }
         );
@@ -435,7 +544,13 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
           inputTokenAddress,
           config.destinationOutputTokenAddress,
           donationAmount,
-          { gasLimit: 500000, value: BigInt(1000000000000000) } // Adjust this value based on your contract's gas requirements
+          {
+            gasLimit: 500000,
+            value:
+              config.destinationChain == "celo" // TODO: Fix this hack with Axelar gas estimator (after they upgrade to ethers ^6)
+                ? BigInt("500000000000000000")
+                : BigInt(1000000000000000),
+          } // Adjust this value based on your contract's gas requirements
         );
       }
 
@@ -570,111 +685,6 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
       return [];
     }
   }
-
-  function getNativeToken(chainId: number) {
-    const nativeTokens = {
-      10: {
-        symbol: "ETH",
-        name: "Ethereum",
-        address: "0x0000000000000000000000000000000000000000",
-      },
-      8453: {
-        symbol: "ETH",
-        name: "Ethereum",
-        address: "0x0000000000000000000000000000000000000000",
-      },
-      42220: {
-        symbol: "CELO",
-        name: "Celo",
-        address: "0x471EcE3750Da237f93B8E339c536989b8978a438",
-      },
-      42161: {
-        symbol: "ETH",
-        name: "Ethereum",
-        address: "0x0000000000000000000000000000000000000000",
-      },
-    };
-    return (
-      nativeTokens[chainId] || {
-        symbol: "NATIVE",
-        name: "Native Token",
-        address: "0x0000000000000000000000000000000000000000",
-      }
-    );
-  }
-
-  function getExplorerApiUrl(chainId: number) {
-    const apiUrls = {
-      10: "https://api-optimistic.etherscan.io/api",
-      8453: "https://api.basescan.org/api",
-      42161: "https://api.arbiscan.io/api",
-      42220: "https://api.celoscan.io/api",
-    };
-    return apiUrls[chainId];
-  }
-
-  function getExplorerApiKey(chainId: number) {
-    const apiKeys = {
-      10: "9HBFD3UFSTQV71132ZASZ4T6M6Y1VHDGKM",
-      8453: "X4R5GNYKKD34HKQGEVC6SXGHI62EGUYNJ8",
-      42220: "4MY7GCBJXMB181R771BY5HRSCAQN2PXTUN",
-      42161: "VU2ZRHTKI2HFMEBAVXV5WSN9KZRGEB8841",
-    };
-    return apiKeys[chainId];
-  }
-
-  function getChainParams(chainId: number) {
-    const chains = {
-      10: {
-        chainId: "0xA",
-        chainName: "Optimism",
-        AxelarChainName: "optimism",
-        nativeCurrency: { name: "Ethereum", symbol: "ETH", decimals: 18 },
-        rpcUrls: ["https://mainnet.optimism.io"],
-        blockExplorerUrls: ["https://optimistic.etherscan.io"],
-        swapperBridgerContract: "0x3652eC40C4D8F3e804373455EF155777F250a6E2",
-        hyperMinter: "0x822F17A9A5EeCFd66dBAFf7946a8071C265D1d07",
-      },
-      8453: {
-        chainId: "0x2105",
-        chainName: "Base",
-        AxelarChainName: "base",
-        nativeCurrency: { name: "Ethereum", symbol: "ETH", decimals: 18 },
-        rpcUrls: ["https://mainnet.base.org"],
-        blockExplorerUrls: ["https://basescan.org"],
-        swapperBridgerContract: "0xe0E84235511aC6437C756C1d70e8cCdd8917df36",
-        hyperMinter: "0xC2d179166bc9dbB00A03686a5b17eCe2224c2704",
-      },
-      42220: {
-        chainId: "0xA4EC",
-        chainName: "Celo",
-        AxelarChainName: "celo",
-        nativeCurrency: { name: "Celo", symbol: "CELO", decimals: 18 },
-        rpcUrls: ["https://forno.celo.org"],
-        blockExplorerUrls: ["https://explorer.celo.org"],
-        swapperBridgerContract: "0xFa1aD6310C6540c5430F9ddA657FCE4BdbF1f4df",
-        hyperMinter: "0x16bA53B74c234C870c61EFC04cD418B8f2865959",
-      },
-      42161: {
-        chainId: "0xa4b1",
-        chainName: "Arbitrum",
-        AxelarChainName: "arbitrum",
-        nativeCurrency: { name: "Ethereum", symbol: "ETH", decimals: 18 },
-        rpcUrls: ["https://arb1.arbitrum.io/rpc"],
-        blockExplorerUrls: ["https://arbiscan.io"],
-        swapperBridgerContract: "0xb66f6DAC6F61446FD88c146409dA6DA8F8F10f73",
-        hyperMinter: "0x822F17A9A5EeCFd66dBAFf7946a8071C265D1d07",
-      },
-    };
-    return chains[chainId];
-  }
-
-  const chainOptions = [
-    { id: 10, name: "OP Mainnet" },
-    { id: 8453, name: "Base" },
-    { id: 42220, name: "Celo" },
-    { id: 42161, name: "Arbitrum" },
-  ];
 
   return (
     <>
@@ -980,7 +990,7 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
   const [signer, setSigner] = useState<ethers.JsonRpcSigner | null>(null);
   const [network, setNetwork] = useState<ethers.Network>();
   const [initialized, setInitialized] = useState(false);
-  const [config] = useState(initialConfig);
+  const [config, setConfig] = useState(initialConfig);
   const [selectedToken, setSelectedToken] = useState("");
 
   const account = signer;
@@ -991,160 +1001,24 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
   const [swapperBridgerContract, setSwapperBridgerContract] =
     useState<ethers.Contract>();
 
-  const swapperBridgerABI = [
-    {
-      inputs: [],
-      name: "USDC",
-      outputs: [
-        {
-          internalType: "address",
-          name: "",
-          type: "address",
-        },
-      ],
-      stateMutability: "view",
-      type: "function",
-    },
-    {
-      inputs: [
-        {
-          internalType: "string",
-          name: "destinationChain",
-          type: "string",
-        },
-        {
-          internalType: "string",
-          name: "destinationAddress",
-          type: "string",
-        },
-        {
-          internalType: "address",
-          name: "hcRecipientAddress",
-          type: "address",
-        },
-        {
-          internalType: "uint256",
-          name: "poolId",
-          type: "uint256",
-        },
-        {
-          internalType: "address payable",
-          name: "_splitsAddress",
-          type: "address",
-        },
-        {
-          internalType: "uint256",
-          name: "_hypercertFractionId",
-          type: "uint256",
-        },
-        {
-          internalType: "address",
-          name: "inputTokenAddress",
-          type: "address",
-        },
-        {
-          internalType: "address",
-          name: "destinationOutputTokenAddress",
-          type: "address",
-        },
-        {
-          internalType: "uint256",
-          name: "amount",
-          type: "uint256",
-        },
-      ],
-      name: "sendDonation",
-      outputs: [],
-      stateMutability: "payable",
-      type: "function",
-    },
-    {
-      inputs: [],
-      name: "UNISWAP_V3_FACTORY",
-      outputs: [
-        {
-          internalType: "address",
-          name: "",
-          type: "address",
-        },
-      ],
-      stateMutability: "view",
-      type: "function",
-    },
-  ];
-
-  const erc20ContractABI = [
-    {
-      constant: false,
-      inputs: [
-        {
-          name: "_spender",
-          type: "address",
-        },
-        {
-          name: "_value",
-          type: "uint256",
-        },
-      ],
-      name: "approve",
-      outputs: [
-        {
-          name: "",
-          type: "bool",
-        },
-      ],
-      payable: false,
-      stateMutability: "nonpayable",
-      type: "function",
-    },
-    {
-      constant: true,
-      inputs: [
-        {
-          name: "_owner",
-          type: "address",
-        },
-      ],
-      name: "balanceOf",
-      outputs: [
-        {
-          name: "balance",
-          type: "uint256",
-        },
-      ],
-      payable: false,
-      stateMutability: "view",
-      type: "function",
-    },
-    {
-      constant: true,
-      inputs: [
-        {
-          name: "_owner",
-          type: "address",
-        },
-        {
-          name: "_spender",
-          type: "address",
-        },
-      ],
-      name: "allowance",
-      outputs: [
-        {
-          name: "",
-          type: "uint256",
-        },
-      ],
-      payable: false,
-      stateMutability: "view",
-      type: "function",
-    },
-  ];
-
   const QRLink = `https://app.doogly.org/tip/${config.receiverAddress}/${config.destinationChain}/${config.destinationOutputTokenAddress}`;
 
   useEffect(() => {
     const initialize = async () => {
+      const ensprovider = new ethers.JsonRpcProvider("https://eth.drpc.org");
+      const resolvedAddress = await ensprovider.resolveName(
+        config.receiverAddress
+      );
+
+      if (resolvedAddress) {
+        setConfig({
+          destinationAddress: config.destinationAddress,
+          destinationChain: config.destinationChain,
+          destinationOutputTokenAddress: config.destinationOutputTokenAddress,
+          receiverAddress: resolvedAddress,
+        });
+      }
+
       const net = await provider.getNetwork();
       setNetwork(net);
       setWalletAddressInput(signer.address);
@@ -1242,6 +1116,17 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
     setSubmitButtonDisabled(true);
     setSubmitButtonText("Processing...");
 
+    // const sdk = new AxelarQueryAPI({
+    //   environment: "mainnet" as Environment,
+    // });
+
+    // const estimatedGas = await sdk.estimateGasFee(
+    //   getChainParams(parseInt(network.chainId.toString())).AxelarChainName,
+    //   config.destinationChain,
+    //   BigInt(500000),
+    //   getNativeToken(parseInt(network.chainId.toString())).symbol
+    // );
+
     try {
       let tx;
       if (selectedToken === "native") {
@@ -1306,7 +1191,10 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
           inputTokenAddress,
           config.destinationOutputTokenAddress,
           donationAmount,
-          { gasLimit: 500000, value: BigInt(1000000000000000) } // Adjust this value based on your contract's gas requirements
+          {
+            gasLimit: 500000,
+            value: BigInt(1000000000000000),
+          } // Adjust this value based on your contract's gas requirements
         );
       }
 
@@ -1442,111 +1330,6 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
     }
   }
 
-  function getNativeToken(chainId: number) {
-    const nativeTokens = {
-      10: {
-        symbol: "ETH",
-        name: "Ethereum",
-        address: "0x0000000000000000000000000000000000000000",
-      },
-      8453: {
-        symbol: "ETH",
-        name: "Ethereum",
-        address: "0x0000000000000000000000000000000000000000",
-      },
-      42220: {
-        symbol: "CELO",
-        name: "Celo",
-        address: "0x471EcE3750Da237f93B8E339c536989b8978a438",
-      },
-      42161: {
-        symbol: "ETH",
-        name: "Ethereum",
-        address: "0x0000000000000000000000000000000000000000",
-      },
-    };
-    return (
-      nativeTokens[chainId] || {
-        symbol: "NATIVE",
-        name: "Native Token",
-        address: "0x0000000000000000000000000000000000000000",
-      }
-    );
-  }
-
-  function getExplorerApiUrl(chainId: number) {
-    const apiUrls = {
-      10: "https://api-optimistic.etherscan.io/api",
-      8453: "https://api.basescan.org/api",
-      42161: "https://api.arbiscan.io/api",
-      42220: "https://api.celoscan.io/api",
-    };
-    return apiUrls[chainId];
-  }
-
-  function getExplorerApiKey(chainId: number) {
-    const apiKeys = {
-      10: "9HBFD3UFSTQV71132ZASZ4T6M6Y1VHDGKM",
-      8453: "X4R5GNYKKD34HKQGEVC6SXGHI62EGUYNJ8",
-      42220: "4MY7GCBJXMB181R771BY5HRSCAQN2PXTUN",
-      42161: "VU2ZRHTKI2HFMEBAVXV5WSN9KZRGEB8841",
-    };
-    return apiKeys[chainId];
-  }
-
-  function getChainParams(chainId: number) {
-    const chains = {
-      10: {
-        chainId: "0xA",
-        chainName: "Optimism",
-        AxelarChainName: "optimism",
-        nativeCurrency: { name: "Ethereum", symbol: "ETH", decimals: 18 },
-        rpcUrls: ["https://mainnet.optimism.io"],
-        blockExplorerUrls: ["https://optimistic.etherscan.io"],
-        swapperBridgerContract: "0x3652eC40C4D8F3e804373455EF155777F250a6E2",
-        hyperMinter: "0x822F17A9A5EeCFd66dBAFf7946a8071C265D1d07",
-      },
-      8453: {
-        chainId: "0x2105",
-        chainName: "Base",
-        AxelarChainName: "base",
-        nativeCurrency: { name: "Ethereum", symbol: "ETH", decimals: 18 },
-        rpcUrls: ["https://mainnet.base.org"],
-        blockExplorerUrls: ["https://basescan.org"],
-        swapperBridgerContract: "0xe0E84235511aC6437C756C1d70e8cCdd8917df36",
-        hyperMinter: "0xC2d179166bc9dbB00A03686a5b17eCe2224c2704",
-      },
-      42220: {
-        chainId: "0xA4EC",
-        chainName: "Celo",
-        AxelarChainName: "celo",
-        nativeCurrency: { name: "Celo", symbol: "CELO", decimals: 18 },
-        rpcUrls: ["https://forno.celo.org"],
-        blockExplorerUrls: ["https://explorer.celo.org"],
-        swapperBridgerContract: "0xFa1aD6310C6540c5430F9ddA657FCE4BdbF1f4df",
-        hyperMinter: "0x16bA53B74c234C870c61EFC04cD418B8f2865959",
-      },
-      42161: {
-        chainId: "0xa4b1",
-        chainName: "Arbitrum",
-        AxelarChainName: "arbitrum",
-        nativeCurrency: { name: "Ethereum", symbol: "ETH", decimals: 18 },
-        rpcUrls: ["https://arb1.arbitrum.io/rpc"],
-        blockExplorerUrls: ["https://arbiscan.io"],
-        swapperBridgerContract: "0xb66f6DAC6F61446FD88c146409dA6DA8F8F10f73",
-        hyperMinter: "0x822F17A9A5EeCFd66dBAFf7946a8071C265D1d07",
-      },
-    };
-    return chains[chainId];
-  }
-
-  const chainOptions = [
-    { id: 10, name: "OP Mainnet" },
-    { id: 8453, name: "Base" },
-    { id: 42220, name: "Celo" },
-    { id: 42161, name: "Arbitrum" },
-  ];
-
   return (
     <>
       {/* {isOpen && (
@@ -1616,7 +1399,21 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
               <QRCodeSVG value={QRLink} size={256} />
               <Button
                 onClick={() => setShowQR(false)}
-                className="mt-4 text-grey-700"
+                className="mt-4"
+                style={{
+                  backgroundColor: modalStyles.buttonColor || "#8A2BE2",
+                  color: "white",
+                  border: "none",
+                  padding: "10px 20px",
+                  textAlign: "center",
+                  textDecoration: "none",
+                  display: "inline-block",
+                  fontSize: "16px",
+                  margin: "4px 2px",
+                  cursor: "pointer",
+                  borderRadius: "5px",
+                  transition: "background-color 0.3s ease",
+                }}
               >
                 Back to Donation Form
               </Button>
@@ -1716,26 +1513,28 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
                     >
                       {submitButtonText}
                     </Button>
-                    <Button
-                      onClick={() => setShowQR(true)}
-                      variant="outline"
-                      style={{
-                        backgroundColor: modalStyles.buttonColor || "#8A2BE2",
-                        color: "white",
-                        border: "none",
-                        padding: "10px 20px",
-                        textAlign: "center",
-                        textDecoration: "none",
-                        display: "inline-block",
-                        fontSize: "16px",
-                        margin: "4px 2px",
-                        cursor: "pointer",
-                        borderRadius: "5px",
-                        transition: "background-color 0.3s ease",
-                      }}
-                    >
-                      Show QR Code
-                    </Button>
+                    {initialized ? (
+                      <Button
+                        onClick={() => setShowQR(true)}
+                        variant="outline"
+                        style={{
+                          backgroundColor: modalStyles.buttonColor || "#8A2BE2",
+                          color: "white",
+                          border: "none",
+                          padding: "10px 20px",
+                          textAlign: "center",
+                          textDecoration: "none",
+                          display: "inline-block",
+                          fontSize: "16px",
+                          margin: "4px 2px",
+                          cursor: "pointer",
+                          borderRadius: "5px",
+                          transition: "background-color 0.3s ease",
+                        }}
+                      >
+                        Show QR Code
+                      </Button>
+                    ) : null}
                   </div>
                 </>
               ) : (
@@ -1759,26 +1558,28 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
                   >
                     Connect Wallet
                   </Button>
-                  <Button
-                    onClick={() => setShowQR(true)}
-                    variant="outline"
-                    style={{
-                      backgroundColor: modalStyles.buttonColor || "#8A2BE2",
-                      color: "white",
-                      border: "none",
-                      padding: "10px 20px",
-                      textAlign: "center",
-                      textDecoration: "none",
-                      display: "inline-block",
-                      fontSize: "16px",
-                      margin: "4px 2px",
-                      cursor: "pointer",
-                      borderRadius: "5px",
-                      transition: "background-color 0.3s ease",
-                    }}
-                  >
-                    Show QR Code
-                  </Button>
+                  {initialized ? (
+                    <Button
+                      onClick={() => setShowQR(true)}
+                      variant="outline"
+                      style={{
+                        backgroundColor: modalStyles.buttonColor || "#8A2BE2",
+                        color: "white",
+                        border: "none",
+                        padding: "10px 20px",
+                        textAlign: "center",
+                        textDecoration: "none",
+                        display: "inline-block",
+                        fontSize: "16px",
+                        margin: "4px 2px",
+                        cursor: "pointer",
+                        borderRadius: "5px",
+                        transition: "background-color 0.3s ease",
+                      }}
+                    >
+                      Show QR Code
+                    </Button>
+                  ) : null}
                 </div>
               )}
             </div>
