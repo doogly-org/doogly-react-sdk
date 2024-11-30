@@ -435,7 +435,9 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
       }
     };
 
-    updateProviders(parseInt(currentChainId?.toString()));
+    if (initialized) {
+      updateProviders(parseInt(currentChainId?.toString()));
+    }
   }, [currentChainId]);
 
   function updateInputTokenAddress(val) {
@@ -618,22 +620,27 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
       for (const token of userTokens) {
         try {
           // Check if there's a pool with the stablecoin for this token
-          const poolAddress = await uniswapV3FactoryContract.getPool(
-            stablecoinAddress,
-            token.address,
-            3000
-          );
+          const feeTiers = [3000, 10000, 500, 100];
+          for (let j = 0; j < feeTiers.length; j++) {
+            const poolAddress = await uniswapV3FactoryContract.getPool(
+              stablecoinAddress,
+              token.address,
+              feeTiers[j]
+            );
 
-          if (
-            poolAddress != ethers.ZeroAddress ||
-            token.address == stablecoinAddress
-          ) {
-            tokens[token.symbol] = {
-              symbol: token.symbol,
-              name: token.name,
-              address: token.address,
-              decimals: parseInt(token.decimals),
-            };
+            if (
+              poolAddress != ethers.ZeroAddress ||
+              token.address == stablecoinAddress
+            ) {
+              tokens[token.symbol] = {
+                symbol: token.symbol,
+                name: token.name,
+                address: token.address,
+                decimals: parseInt(token.decimals),
+              };
+
+              break;
+            }
           }
         } catch (error) {
           console.error(`Error checking pool for ${token.symbol}:`, error);
@@ -685,23 +692,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
         }
       }
 
-      // Check balances and filter out tokens with zero balance
-      const tokensWithBalance = [];
-      for (const token of userTokens) {
-        const contract = new ethers.Contract(
-          token.address,
-          ["function balanceOf(address) view returns (uint256)"],
-          provider
-        );
-
-        const balance = await contract.balanceOf(userAddress);
-
-        if (balance > 0) {
-          tokensWithBalance.push(token);
-        }
-      }
-
-      return tokensWithBalance;
+      return userTokens;
     } catch (error) {
       console.error("Failed to fetch user ERC20 tokens:", error);
       return [];
@@ -802,20 +793,27 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
                     <label className="block mb-2 text-sm font-medium text-gray-700">
                       Select Chain
                     </label>
-                    <select
-                      className="w-full p-2 border border-gray-300 rounded bg-white text-gray-700 focus:border-purple-500 focus:ring-purple-500"
-                      onChange={(e) => chainSelect(parseInt(e.target.value))}
-                    >
-                      {chainOptions.map((chain) => (
-                        <option
-                          key={chain.id}
-                          value={chain.id}
-                          selected={BigInt(chain.id) === network?.chainId}
-                        >
-                          {chain.name}
-                        </option>
-                      ))}
-                    </select>
+                    {network?.chainId ? (
+                      <select
+                        className="w-full p-2 border border-gray-300 rounded bg-white text-gray-700 focus:border-purple-500 focus:ring-purple-500"
+                        onChange={(e) => chainSelect(parseInt(e.target.value))}
+                        defaultValue={parseInt(network.chainId.toString())}
+                      >
+                        {chainOptions.map((chain) => (
+                          <option
+                            key={chain.id}
+                            value={chain.id}
+                            // selected={BigInt(chain.id) === network?.chainId}
+                          >
+                            {chain.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="text-sm font-medium text-gray-700">
+                        loading...
+                      </div>
+                    )}
                   </div>
 
                   <div className="mb-4">
@@ -1295,23 +1293,27 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
 
       for (const token of userTokens) {
         try {
-          // Check if there's a pool with the stablecoin for this token
-          const poolAddress = await uniswapV3FactoryContract.getPool(
-            stablecoinAddress,
-            token.address,
-            3000
-          );
+          const feeTiers = [3000, 10000, 500, 100];
+          for (let j = 0; j < feeTiers.length; j++) {
+            const poolAddress = await uniswapV3FactoryContract.getPool(
+              stablecoinAddress,
+              token.address,
+              feeTiers[j]
+            );
 
-          if (
-            poolAddress != ethers.ZeroAddress ||
-            token.address == stablecoinAddress
-          ) {
-            tokens[token.symbol] = {
-              symbol: token.symbol,
-              name: token.name,
-              address: token.address,
-              decimals: parseInt(token.decimals),
-            };
+            if (
+              poolAddress != ethers.ZeroAddress ||
+              token.address == stablecoinAddress
+            ) {
+              tokens[token.symbol] = {
+                symbol: token.symbol,
+                name: token.name,
+                address: token.address,
+                decimals: parseInt(token.decimals),
+              };
+
+              break;
+            }
           }
         } catch (error) {
           console.error(`Error checking pool for ${token.symbol}:`, error);
@@ -1363,23 +1365,7 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
         }
       }
 
-      // Check balances and filter out tokens with zero balance
-      const tokensWithBalance = [];
-      for (const token of userTokens) {
-        const contract = new ethers.Contract(
-          token.address,
-          ["function balanceOf(address) view returns (uint256)"],
-          provider
-        );
-
-        const balance = await contract.balanceOf(userAddress);
-
-        if (balance > 0) {
-          tokensWithBalance.push(token);
-        }
-      }
-
-      return tokensWithBalance;
+      return userTokens;
     } catch (error) {
       console.error("Failed to fetch user ERC20 tokens:", error);
       return [];
@@ -1494,20 +1480,27 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
                     <label className="block mb-2 text-sm font-medium text-gray-700">
                       Select Chain
                     </label>
-                    <select
-                      className="w-full p-2 border border-gray-300 rounded bg-white text-gray-700 focus:border-purple-500 focus:ring-purple-500"
-                      onChange={(e) => chainSelect(parseInt(e.target.value))}
-                    >
-                      {chainOptions.map((chain) => (
-                        <option
-                          key={chain.id}
-                          value={chain.id}
-                          selected={BigInt(chain.id) === network?.chainId}
-                        >
-                          {chain.name}
-                        </option>
-                      ))}
-                    </select>
+                    {network?.chainId ? (
+                      <select
+                        className="w-full p-2 border border-gray-300 rounded bg-white text-gray-700 focus:border-purple-500 focus:ring-purple-500"
+                        onChange={(e) => chainSelect(parseInt(e.target.value))}
+                        defaultValue={parseInt(network.chainId.toString())}
+                      >
+                        {chainOptions.map((chain) => (
+                          <option
+                            key={chain.id}
+                            value={chain.id}
+                            // selected={BigInt(chain.id) === network?.chainId}
+                          >
+                            {chain.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="text-sm font-medium text-gray-700">
+                        loading...
+                      </div>
+                    )}
                   </div>
 
                   <div className="mb-4">
