@@ -331,9 +331,9 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
   const [network, setNetwork] = useState<ethers.Network>();
   const [initialized, setInitialized] = useState(false);
   const [config, setConfig] = useState(initialConfig);
-  const [selectedToken, setSelectedToken] = useState("");
+  const [selectedToken, setSelectedToken] = useState("native");
+  const [currentChainId, setCurrentChainId] = useState<bigint>();
 
-  const account = signer;
   const [donationAmount, setDonationAmount] = useState("0");
   const [walletAddressInput, setWalletAddressInput] = useState("");
   const [submitButtonText, setSubmitButtonText] = useState("Donate");
@@ -383,6 +383,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
       const net = await provider.getNetwork();
       setNetwork(net);
       setWalletAddressInput(signer.address);
+      setCurrentChainId(net.chainId);
 
       const sbContract = new ethers.Contract(
         getChainParams(parseInt(net.chainId.toString())).swapperBridgerContract,
@@ -412,6 +413,31 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
     }
   }, [signer, network]);
 
+  useEffect(() => {
+    const updateProviders = async (chainId: number) => {
+      try {
+        const web3Provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await web3Provider.getSigner();
+        const net = await web3Provider.getNetwork();
+        setNetwork(net);
+        setSigner(signer);
+        setProvider(web3Provider);
+
+        const sbContract = new ethers.Contract(
+          getChainParams(chainId).swapperBridgerContract,
+          swapperBridgerABI,
+          signer
+        );
+
+        setSwapperBridgerContract(sbContract);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    updateProviders(parseInt(currentChainId?.toString()));
+  }, [currentChainId]);
+
   function updateInputTokenAddress(val) {
     setSelectedToken(val);
   }
@@ -422,6 +448,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
         method: "wallet_switchEthereumChain",
         params: [{ chainId: `0x${chainId.toString(16)}` }],
       });
+      setCurrentChainId(chainId);
     } catch (switchError) {
       // This error code indicates that the chain has not been added to MetaMask.
       if (switchError.code === 4902) {
@@ -451,17 +478,12 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
     }
   };
 
-  // const chainSelectEl = document.getElementById("crypto-donate-chain");
   const chainSelect = async (newChainId: number) => {
     if (BigInt(newChainId) !== network?.chainId) {
       try {
+        setUniswapTokens({});
         await switchChain(newChainId);
-
-        const newUniswapTokens = await fetchUserTokensAndUniswapPools(
-          newChainId
-        );
-
-        setUniswapTokens(newUniswapTokens);
+        setCurrentChainId(BigInt(newChainId));
       } catch (error) {
         console.error("Failed to switch chain:", error);
       }
@@ -479,7 +501,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
 
     try {
       let tx;
-      if (selectedToken === "native") {
+      if (inputTokenAddress === "0x0000000000000000000000000000000000000000") {
         // For native token transactions
         tx = await swapperBridgerContract.sendDonation(
           config.destinationChain,
@@ -488,12 +510,12 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
           config.poolId,
           config.splitsAddress,
           config.hypercertFractionId,
-          "0x0000000000000000000000000000000000000000", // native token
+          inputTokenAddress, // native token
           config.destinationOutputTokenAddress,
           ethers.parseEther(amount),
           {
             value:
-              config.destinationChain == "celo" // TODO: Fix this hack with Axelar gas estimator (after they upgrade to ethers ^6)
+              currentChainId?.toString() === "42220" // TODO: Fix this hack with Axelar gas estimator (after they upgrade to ethers ^6)
                 ? BigInt("500000000000000000") + ethers.parseEther(amount)
                 : BigInt(100000000000000) + ethers.parseEther(amount),
             gasLimit: 500000,
@@ -509,13 +531,13 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
         const erc20Contract = new ethers.Contract(
           inputTokenAddress,
           erc20ContractABI,
-          account
+          signer
         );
 
         // Check current allowance
         // @ts-ignore
         const currentAllowance = await erc20Contract.allowance(
-          account?.address,
+          signer?.address,
           await swapperBridgerContract.getAddress()
         );
 
@@ -547,7 +569,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
           {
             gasLimit: 500000,
             value:
-              config.destinationChain == "celo" // TODO: Fix this hack with Axelar gas estimator (after they upgrade to ethers ^6)
+              currentChainId?.toString() === "42220" // TODO: Fix this hack with Axelar gas estimator (after they upgrade to ethers ^6)
                 ? BigInt("500000000000000000")
                 : BigInt(1000000000000000),
           } // Adjust this value based on your contract's gas requirements
@@ -570,7 +592,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
   async function fetchUserTokensAndUniswapPools(chainId: number) {
     const tokens = { native: getNativeToken(chainId) };
     // Fetch user's ERC20 tokens
-    const userTokens = await fetchUserERC20Tokens(account?.address, chainId);
+    const userTokens = await fetchUserERC20Tokens(signer?.address, chainId);
 
     try {
       const stablecoinAddress = await swapperBridgerContract.USDC();
@@ -933,9 +955,9 @@ interface DooglyTippingProps {
   buttonClassName?: string;
   modalTitle?: string;
   web3Config?: Web3Config;
-  config?: {
+  config: {
     destinationChain: string;
-    destinationAddress?: string;
+    destinationAddress: string;
     destinationOutputTokenAddress: string;
     receiverAddress: string;
   };
@@ -956,6 +978,7 @@ export const DooglyTippingButton: React.FC<DooglyTippingProps> = ({
   modalTitle = "Make a Donation",
   config: initialConfig = {
     receiverAddress: "",
+    destinationAddress: "",
     destinationChain: "celo",
     destinationOutputTokenAddress: "0xcebA9300f2b948710d2653dD7B07f33A8B32118C",
   },
@@ -991,9 +1014,9 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
   const [network, setNetwork] = useState<ethers.Network>();
   const [initialized, setInitialized] = useState(false);
   const [config, setConfig] = useState(initialConfig);
-  const [selectedToken, setSelectedToken] = useState("");
+  const [selectedToken, setSelectedToken] = useState("native");
+  const [currentChainId, setCurrentChainId] = useState<bigint>();
 
-  const account = signer;
   const [donationAmount, setDonationAmount] = useState("0");
   const [walletAddressInput, setWalletAddressInput] = useState("");
   const [submitButtonText, setSubmitButtonText] = useState("Donate");
@@ -1017,11 +1040,15 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
           destinationOutputTokenAddress: config.destinationOutputTokenAddress,
           receiverAddress: resolvedAddress,
         });
+
+        setWalletAddressInput(resolvedAddress);
+      } else {
+        setWalletAddressInput(config.receiverAddress);
       }
 
       const net = await provider.getNetwork();
       setNetwork(net);
-      setWalletAddressInput(signer.address);
+      setCurrentChainId(net.chainId);
 
       const sbContract = new ethers.Contract(
         getChainParams(parseInt(net.chainId.toString())).swapperBridgerContract,
@@ -1049,13 +1076,40 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
     if (swapperBridgerContract && network) {
       initializePools();
     }
-  }, [signer, network]);
+  }, [signer, network?.chainId]);
 
-  function updateInputTokenAddress(val) {
+  useEffect(() => {
+    const updateProviders = async (chainId: number) => {
+      try {
+        const web3Provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await web3Provider.getSigner();
+        const net = await web3Provider.getNetwork();
+        setNetwork(net);
+        setSigner(signer);
+        setProvider(web3Provider);
+
+        const sbContract = new ethers.Contract(
+          getChainParams(chainId).swapperBridgerContract,
+          swapperBridgerABI,
+          signer
+        );
+
+        setSwapperBridgerContract(sbContract);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    if (initialized) {
+      updateProviders(parseInt(currentChainId?.toString()));
+    }
+  }, [currentChainId]);
+
+  function updateInputTokenAddress(val: React.SetStateAction<string>) {
     setSelectedToken(val);
   }
 
-  async function switchChain(chainId) {
+  async function switchChain(chainId: number) {
     try {
       await window.ethereum.request({
         method: "wallet_switchEthereumChain",
@@ -1073,6 +1127,7 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
           throw new Error("Failed to add the network to MetaMask");
         }
       } else {
+        console.error(switchError);
         throw new Error("Failed to switch network in MetaMask");
       }
     }
@@ -1090,17 +1145,12 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
     }
   };
 
-  // const chainSelectEl = document.getElementById("crypto-donate-chain");
   const chainSelect = async (newChainId: number) => {
     if (BigInt(newChainId) !== network?.chainId) {
       try {
+        setUniswapTokens({});
         await switchChain(newChainId);
-
-        const newUniswapTokens = await fetchUserTokensAndUniswapPools(
-          newChainId
-        );
-
-        setUniswapTokens(newUniswapTokens);
+        setCurrentChainId(BigInt(newChainId));
       } catch (error) {
         console.error("Failed to switch chain:", error);
       }
@@ -1129,20 +1179,23 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
 
     try {
       let tx;
-      if (selectedToken === "native") {
+      if (inputTokenAddress == "0x0000000000000000000000000000000000000000") {
         // For native token transactions
         tx = await swapperBridgerContract.sendDonation(
           config.destinationChain,
           config.destinationAddress,
+          signer.address,
+          0,
           walletAddressInput,
           0,
-          config.receiverAddress,
-          0,
-          "0x0000000000000000000000000000000000000000", // native token
+          inputTokenAddress, // native token
           config.destinationOutputTokenAddress,
           ethers.parseEther(amount),
           {
-            value: BigInt(100000000000000) + ethers.parseEther(amount),
+            value:
+              currentChainId?.toString() === "42220" // TODO: Fix this hack with Axelar gas estimator (after they upgrade to ethers ^6)
+                ? BigInt("500000000000000000") + ethers.parseEther(amount)
+                : BigInt(100000000000000) + ethers.parseEther(amount),
             gasLimit: 500000,
           }
         );
@@ -1156,13 +1209,13 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
         const erc20Contract = new ethers.Contract(
           inputTokenAddress,
           erc20ContractABI,
-          account
+          signer
         );
 
         // Check current allowance
         // @ts-ignore
         const currentAllowance = await erc20Contract.allowance(
-          account?.address,
+          signer?.address,
           await swapperBridgerContract.getAddress()
         );
 
@@ -1184,17 +1237,20 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
         tx = await swapperBridgerContract.sendDonation(
           config.destinationChain,
           config.destinationAddress,
-          walletAddressInput,
+          signer.address,
           0,
-          config.receiverAddress,
+          walletAddressInput,
           0,
           inputTokenAddress,
           config.destinationOutputTokenAddress,
           donationAmount,
           {
             gasLimit: 500000,
-            value: BigInt(1000000000000000),
-          } // Adjust this value based on your contract's gas requirements
+            value:
+              currentChainId?.toString() === "42220" // TODO: Fix this hack with Axelar gas estimator (after they upgrade to ethers ^6)
+                ? BigInt("500000000000000000")
+                : BigInt(1000000000000000),
+          }
         );
       }
 
@@ -1214,7 +1270,7 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
   async function fetchUserTokensAndUniswapPools(chainId: number) {
     const tokens = { native: getNativeToken(chainId) };
     // Fetch user's ERC20 tokens
-    const userTokens = await fetchUserERC20Tokens(account?.address, chainId);
+    const userTokens = await fetchUserERC20Tokens(signer?.address, chainId);
 
     try {
       const stablecoinAddress = await swapperBridgerContract.USDC();
