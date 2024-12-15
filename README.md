@@ -66,3 +66,15 @@ To receive donations and not disburse hypercerts you can use Doogly tipping comp
   }}
 />
 ```
+
+### Doogly Gateway contract deployments
+
+|   Chain   |                                                         Contract Address                                                         |
+| :-------: | :------------------------------------------------------------------------------------------------------------------------------: |
+| Optimism  | [0x3652eC40C4D8F3e804373455EF155777F250a6E2](https://optimistic.etherscan.io/address/0x3652eC40C4D8F3e804373455EF155777F250a6E2) |
+|   Base    |      [0xe0E84235511aC6437C756C1d70e8cCdd8917df36](https://basescan.org/address/0xe0E84235511aC6437C756C1d70e8cCdd8917df36)       |
+|   Celo    |       [0xFa1aD6310C6540c5430F9ddA657FCE4BdbF1f4df](https://celoscan.io/address/0xFa1aD6310C6540c5430F9ddA657FCE4BdbF1f4df)       |
+| Arbitrum  |       [0xb66f6DAC6F61446FD88c146409dA6DA8F8F10f73](https://arbiscan.io/address/0xb66f6DAC6F61446FD88c146409dA6DA8F8F10f73)       |
+|  Polygon  |     [0x1E1461464852d6FbF8a19097d14408d657d49457](https://polygonscan.com/address/0x1E1461464852d6FbF8a19097d14408d657d49457)     |
+| Avalanche |      [0x1E1461464852d6FbF8a19097d14408d657d49457](https://snowtrace.io/address/0x1E1461464852d6FbF8a19097d14408d657d49457)       |
+|    BNB    |       [0x73F9fEBd723ebcaa23A6DEd587afbF2a503B303f](https://bscscan.com/address/0x73F9fEBd723ebcaa23A6DEd587afbF2a503B303f)       |
