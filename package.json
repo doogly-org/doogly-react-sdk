@@ -1,6 +1,6 @@
 {
   "name": "@doogly/doogly-donate-component",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "A React component for crypto donations with QR code support and custom Web3 provider support",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",

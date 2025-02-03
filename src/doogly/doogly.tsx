@@ -300,6 +300,7 @@ function getChainParams(chainId: number) {
       rpcUrls: ["https://polygon-mainnet.infura.io"],
       blockExplorerUrls: ["https://polygonscan.com"],
       swapperBridgerContract: "0x1E1461464852d6FbF8a19097d14408d657d49457",
+      hyperMinter: "0x0000000000000000000000000000000000000000",
     },
     43114: {
       chainId: "0xa86a",
@@ -309,6 +310,7 @@ function getChainParams(chainId: number) {
       rpcUrls: ["https://api.avax.network/ext/bc/C/rpc"],
       blockExplorerUrls: ["https://snowtrace.io"],
       swapperBridgerContract: "0x1E1461464852d6FbF8a19097d14408d657d49457",
+      hyperMinter: "0x0000000000000000000000000000000000000000",
     },
     56: {
       chainId: "0x38",
@@ -318,6 +320,7 @@ function getChainParams(chainId: number) {
       rpcUrls: ["https://bsc-dataseed.bnbchain.org"],
       blockExplorerUrls: ["https://bscscan.com"],
       swapperBridgerContract: "0x73F9fEBd723ebcaa23A6DEd587afbF2a503B303f",
+      hyperMinter: "0x0000000000000000000000000000000000000000",
     },
   };
   return chains[chainId];
@@ -446,6 +449,17 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
           console.error("Error initializing config:", error);
           // Handle the error appropriately (e.g., set default config, alert user, etc.)
         }
+      } else {
+        let initialConfig = config;
+        initialConfig.hypercertFractionId = BigInt(
+          initialConfig.hypercertFractionId
+        )
+          ? BigInt(initialConfig.hypercertFractionId) == BigInt(0)
+            ? BigInt(initialConfig.hypercertFractionId).toString()
+            : (BigInt(initialConfig.hypercertFractionId) + BigInt(1)).toString()
+          : BigInt(0).toString();
+
+        setConfig(initialConfig);
       }
       const net = await provider.getNetwork();
       setNetwork(net);
@@ -1025,6 +1039,7 @@ interface DooglyTippingProps {
     destinationOutputTokenAddress: string;
     receiverAddress: string;
   };
+  showWalletInput?: boolean;
   projectId?: string;
   provider?: ethers.BrowserProvider | ethers.Provider;
   signer?: ethers.JsonRpcSigner;
@@ -1046,6 +1061,7 @@ export const DooglyTippingButton: React.FC<DooglyTippingProps> = ({
     destinationChain: "celo",
     destinationOutputTokenAddress: "0xcebA9300f2b948710d2653dD7B07f33A8B32118C",
   },
+  showWalletInput = true,
   modalStyles = {},
 }) => {
   return (
@@ -1055,6 +1071,7 @@ export const DooglyTippingButton: React.FC<DooglyTippingProps> = ({
       modalTitle={modalTitle}
       config={initialConfig}
       modalStyles={modalStyles}
+      showWalletInput={showWalletInput}
     />
   );
 };
@@ -1064,6 +1081,7 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
   buttonClassName,
   modalTitle,
   config: initialConfig,
+  showWalletInput,
   modalStyles,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -1529,17 +1547,19 @@ const DooglyTippingModal: React.FC<Omit<DooglyTippingProps, "web3Config">> = ({
             <div className="space-y-4">
               {signer ? (
                 <>
-                  <div className="mb-4">
-                    <label className="block mb-2 text-sm font-medium text-gray-700">
-                      Wallet Address
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full p-2 border border-gray-300 rounded bg-white text-gray-700 focus:border-purple-500 focus:ring-purple-500"
-                      value={walletAddressInput}
-                      onChange={(e) => setWalletAddressInput(e.target.value)}
-                    />
-                  </div>
+                  {!showWalletInput && config.receiverAddress ? null : (
+                    <div className="mb-4">
+                      <label className="block mb-2 text-sm font-medium text-gray-700">
+                        Wallet Address
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full p-2 border border-gray-300 rounded bg-white text-gray-700 focus:border-purple-500 focus:ring-purple-500"
+                        value={walletAddressInput}
+                        onChange={(e) => setWalletAddressInput(e.target.value)}
+                      />
+                    </div>
+                  )}
 
                   <div className="mb-4">
                     <label className="block mb-2 text-sm font-medium text-gray-700">
