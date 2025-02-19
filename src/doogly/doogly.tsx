@@ -19,6 +19,7 @@ import {
   TransactionMessage,
   VersionedTransaction,
 } from "@solana/web3.js";
+import { tokenList } from "../constants";
 // import * as bitcoin from "bitcoinjs-lib";
 // import * as ecc from "tiny-secp256k1";
 
@@ -132,7 +133,15 @@ interface Web3Config {
   provider?: ethers.JsonRpcProvider | ethers.BrowserProvider;
 }
 
-interface DooglyDonateProps {
+interface transactionCallback {
+  transactionId: string;
+  requestId: string;
+  fromChainId: string;
+  toChainId: string;
+  status: string; // ["success", "partial_success", "needs_gas", "not_found"]
+}
+
+interface DooglyProps {
   buttonText?: string;
   buttonClassName?: string;
   modalTitle?: string;
@@ -141,6 +150,9 @@ interface DooglyDonateProps {
     destinationChain?: string;
     destinationAddress?: string;
     destinationOutputTokenAddress?: string;
+    donationAmount?: string;
+    donationChainId?: string;
+    donationToken?: string;
   };
   projectId?: string;
   provider?: ethers.BrowserProvider | ethers.Provider;
@@ -159,8 +171,12 @@ interface DooglyDonateProps {
     inputPos?: number;
   }>;
   apiUrl: string;
+  webhookUrl?: string;
+  webHookData?: string;
+  callback?: (transactionCallback: transactionCallback) => void;
 }
 
+const _tokens = tokenList;
 // type BtcAccount = {
 //   address: string;
 //   addressType: "p2tr" | "p2wpkh" | "p2sh" | "p2pkh";
@@ -168,7 +184,7 @@ interface DooglyDonateProps {
 //   purpose: "payment" | "ordinals";
 // };
 
-export const DooglyDonateButton: React.FC<DooglyDonateProps> = ({
+export const DooglyButton: React.FC<DooglyProps> = ({
   buttonText = "Donate with Crypto",
   buttonClassName = "",
   modalTitle = "Make a Donation",
@@ -176,9 +192,12 @@ export const DooglyDonateButton: React.FC<DooglyDonateProps> = ({
   modalStyles = {},
   apiUrl,
   postSwapHook,
+  webhookUrl,
+  webHookData,
+  callback,
 }) => {
   return (
-    <DooglyDonateModal
+    <DooglyModal
       buttonText={buttonText}
       buttonClassName={buttonClassName}
       modalTitle={modalTitle}
@@ -186,11 +205,14 @@ export const DooglyDonateButton: React.FC<DooglyDonateProps> = ({
       modalStyles={modalStyles}
       apiUrl={apiUrl}
       postSwapHook={postSwapHook}
+      callback={callback}
+      webhookUrl={webhookUrl}
+      webHookData={webHookData}
     />
   );
 };
 
-const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
+const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
   buttonText,
   buttonClassName,
   modalTitle,
@@ -198,6 +220,9 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
   modalStyles,
   postSwapHook,
   apiUrl,
+  webhookUrl,
+  webHookData,
+  callback,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [showQR, setShowQR] = useState(false);
@@ -211,16 +236,34 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
   const [, setNetwork] = useState<ethers.Network>();
   const [initialized, setInitialized] = useState(false);
   const [config] = useState(initialConfig);
-  const [currentToken, setCurrentToken] = useState<Token>();
-  const [currentChainId, setCurrentChainId] = useState<bigint | string>();
+  const [currentToken, setCurrentToken] = useState<Token>(
+    config.donationToken
+      ? config.donationChainId
+        ? _tokens.find(
+            (v: Token) =>
+              v.address.toLowerCase() == config.donationToken.toLowerCase() &&
+              v.chainId == config.donationChainId
+          )
+        : _tokens.find((v: Token) => v.address == config.donationToken)
+      : undefined
+  );
+  const [currentChainId, setCurrentChainId] = useState<bigint | string>(
+    config.donationChainId ?? "1"
+  );
 
-  const [donationAmount, setDonationAmount] = useState("0");
+  const [donationAmount, setDonationAmount] = useState(
+    config.donationAmount ?? "0"
+  );
   const [submitButtonText, setSubmitButtonText] = useState("Donate");
   const [submitButtonDisabled, setSubmitButtonDisabled] = useState(false);
   const [isChainDropdownOpen, setIsChainDropdownOpen] = useState(false);
   const [isTokenDropdownOpen, setIsTokenDropdownOpen] = useState(false);
   const [allTokens, setAllTokens] = useState<Token[]>();
-  const [tokens, setTokens] = useState<Token[]>([]);
+  const [tokens, setTokens] = useState<Token[]>(
+    config.donationChainId
+      ? _tokens.filter((i: Token) => i.chainId == config.donationChainId)
+      : []
+  );
   const [chains, setChains] = useState<ChainData[]>([]);
   const [connected, setConnected] = useState(false);
   const [chainSearchQuery, setChainSearchQuery] = useState("");
@@ -414,7 +457,30 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
         console.error("API error:", error.response.data);
       }
       console.error("Error getting deposit address:", error);
-      throw error;
+      throw new Error(error.response.data);
+    }
+  };
+
+  // Function to call the webhook
+  const callWebhook = async (state: {
+    address: string;
+    transactionHash: string;
+    fromChain: string;
+    toChain: string;
+  }) => {
+    if (webhookUrl) {
+      try {
+        state["data"] = webHookData;
+        await fetch(webhookUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ state }), // Send the current state
+        });
+      } catch (error) {
+        console.error("Error calling webhook:", error);
+      }
     }
   };
 
@@ -423,9 +489,10 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
     try {
       const result = await httpInstance.get("status", {
         params: {
-          transactionId: params.chainflipId,
+          transactionId: params.transactionId,
           fromChainId: params.fromChainId,
           toChainId: params.toChainId,
+          requestId: params.requestId,
           bridgeType: params.bridgeType,
         },
       });
@@ -439,20 +506,30 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
     }
   };
 
-  // Function to check solana transaction status
-  const updateTransactionStatus = async (
-    chainflipId: string,
+  // Function to check solana transaction status and execute callback function
+  const updateTransactionStatusAndExecuteCallback = async (
+    transactionId: string,
     requestId: string,
-    toChainId: string
+    fromChainId: string,
+    toChainId: string,
+    bridgeType?: string
   ) => {
-    const getStatusParams = {
-      chainflipId,
-      fromChainId: "solana-mainnet-beta",
-      toChainId,
-      bridgeType: toChainId === "42161" ? "chainflip" : "chainflipmultihop",
-      requestId,
-    };
+    const getStatusParams = bridgeType
+      ? {
+          transactionId,
+          fromChainId,
+          toChainId,
+          bridgeType,
+          requestId,
+        }
+      : {
+          transactionId,
+          requestId,
+          fromChainId,
+          toChainId,
+        };
 
+    console.log(getStatusParams);
     let status;
     const completedStatuses = [
       "success",
@@ -466,7 +543,14 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
     do {
       try {
         status = await getStatus(getStatusParams);
-        console.log(`Route status: ${status.squidTransactionStatus}`);
+        console.log(`Route status: ${status?.squidTransactionStatus}`);
+        callback({
+          transactionId,
+          fromChainId,
+          toChainId,
+          requestId,
+          status: status?.squidTransactionStatus,
+        });
       } catch (error) {
         if (error.response && error.response.status === 404) {
           retryCount++;
@@ -478,14 +562,14 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
           await new Promise((resolve) => setTimeout(resolve, 5000));
           continue;
         } else {
-          throw error;
+          throw error.message;
         }
       }
 
-      if (!completedStatuses.includes(status.squidTransactionStatus)) {
+      if (!completedStatuses.includes(status?.squidTransactionStatus)) {
         await new Promise((resolve) => setTimeout(resolve, 5000));
       }
-    } while (!completedStatuses.includes(status.squidTransactionStatus));
+    } while (!completedStatuses.includes(status?.squidTransactionStatus));
   };
 
   // Function to get the optimal route for the swap using Squid API
@@ -501,14 +585,15 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
           },
         }
       );
-      const requestId = result.headers["x-request-id"]; // Retrieve request ID from response headers
+      const requestId = result.data["x-request-id"]; // Retrieve request ID from response headers
+      console.log(requestId);
       return { data: result.data, requestId: requestId };
     } catch (error) {
       if (error.response) {
         console.error("API error:", error.response.data);
       }
       console.error("Error with parameters:", params);
-      throw error;
+      throw new Error(error.response.data);
     }
   };
 
@@ -519,6 +604,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
       toAddress: config.destinationAddress,
       enableBoost: String(true),
       approveSpending: String(true),
+      callback: callback.toString(),
     };
 
     if (postSwapHook) {
@@ -645,6 +731,20 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
           gasLimit: transactionRequest.gasLimit,
         });
 
+        callWebhook({
+          address: (signer as JsonRpcSigner).address,
+          transactionHash: tx.hash,
+          fromChain: currentChainId?.toString(),
+          toChain: config.destinationChain,
+        });
+
+        await updateTransactionStatusAndExecuteCallback(
+          tx.hash,
+          routeResult.requestId,
+          currentChainId?.toString(),
+          config.destinationChain
+        );
+
         alert(`Donation successful! Transaction hash: ${tx.hash}`);
         setSubmitButtonText("Donation Successful!");
       } else {
@@ -727,18 +827,28 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
             const transactionV0 = new VersionedTransaction(messageV0);
 
             // phantom wallet signer
-            const { signature } = await (
-              provider as PhantomSigner
-            ).signAndSendTransaction(transactionV0);
+            await (provider as PhantomSigner).signAndSendTransaction(
+              transactionV0
+            );
+
+            callWebhook({
+              address: signer as string,
+              transactionHash: depositAddressResult.chainflipStatusTrackingId,
+              fromChain: "solana-mainnet-beta",
+              toChain: config.destinationChain,
+            });
 
             // Monitor using chainflipStatusTrackingId with determined bridge type
-            await updateTransactionStatus(
+            await updateTransactionStatusAndExecuteCallback(
               depositAddressResult.chainflipStatusTrackingId,
               requestId2,
-              config.destinationChain
+              "solana-mainnet-beta",
+              config.destinationChain,
+              depositAddressResult.chainflipStatusTrackingId === "42161"
+                ? "chainflip"
+                : "chainflipmultihop"
             );
-            alert(`Donation successful! Transaction hash: ${signature}`);
-            setSubmitButtonText("Donation Successful!");
+
             return;
           }
 
@@ -790,15 +900,26 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
             provider as PhantomSigner
           ).signAndSendTransaction(transactionV0);
 
-          alert(`Donation successful! Transaction hash: ${signature}`);
-          setSubmitButtonText("Donation Successful!");
+          callWebhook({
+            address: signer as string,
+            transactionHash: depositAddressResult.chainflipStatusTrackingId,
+            fromChain: "solana-mainnet-beta",
+            toChain: config.destinationChain,
+          });
 
           // Monitor using chainflipStatusTrackingId with determined bridge type
-          await updateTransactionStatus(
+          await updateTransactionStatusAndExecuteCallback(
             depositAddressResult.chainflipStatusTrackingId,
             requestId,
-            config.destinationChain
+            "solana-mainnet-beta",
+            config.destinationChain,
+            depositAddressResult.chainflipStatusTrackingId === "42161"
+              ? "chainflip"
+              : "chainflipmultihop"
           );
+
+          alert(`Transaction successful! Hash: ${signature}`);
+          setSubmitButtonText("Transaction Successful!");
         } else {
           // if (
           //   getChainData(chains, currentChainId.toString()).chainType ==
@@ -931,6 +1052,26 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
     }
   }
 
+  // Function to lighten a color
+  function lightenColor(color: string, percent: number) {
+    const num = parseInt(color.replace("#", ""), 16);
+    const amt = Math.round(2.55 * percent);
+    const R = (num >> 16) + amt;
+    const G = ((num >> 8) & 0x00ff) + amt;
+    const B = (num & 0x0000ff) + amt;
+    return (
+      "#" +
+      (
+        0x1000000 +
+        (R < 255 ? (R < 1 ? 0 : R) : 255) * 0x10000 +
+        (G < 255 ? (G < 1 ? 0 : G) : 255) * 0x100 +
+        (B < 255 ? (B < 1 ? 0 : B) : 255)
+      )
+        .toString(16)
+        .slice(1)
+    );
+  }
+
   return (
     <>
       <Button onClick={() => setIsOpen(true)} className={buttonClassName}>
@@ -982,13 +1123,26 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
           </DialogTitle>
 
           {showQR ? (
-            <div className="flex flex-col items-center p-4">
+            <div className="flex flex-col gap-y-5 items-center p-4">
               <QRCodeSVG value={qrLink} size={256} />
               <Button
                 onClick={() => {
                   setShowQR(false);
                 }}
-                style={{ color: modalStyles.textColor || "#8A2BE2" }}
+                style={{
+                  backgroundColor: modalStyles.buttonColor || "#8A2BE2",
+                  color: modalStyles.textColor || "white",
+                  border: "none",
+                  padding: "10px 20px",
+                  textAlign: "center",
+                  textDecoration: "none",
+                  display: "inline-block",
+                  fontSize: "16px",
+                  margin: "4px 2px",
+                  cursor: "pointer",
+                  borderRadius: "5px",
+                  transition: "background-color 0.3s ease",
+                }}
                 className="mt-4"
               >
                 Back to Donation Form
@@ -1001,7 +1155,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
                   className={`rounded-md w-full flex justify-center`}
                   style={{
                     backgroundColor: modalStyles.buttonColor || "#8A2BE2",
-                    color: "white",
+                    color: modalStyles.textColor || "white",
                     border: "none",
                     padding: "10px 20px",
                     textAlign: "center",
@@ -1067,7 +1221,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
                   className={`rounded-md w-full flex justify-center`}
                   style={{
                     backgroundColor: modalStyles.buttonColor || "#8A2BE2",
-                    color: "white",
+                    color: modalStyles.textColor || "white",
                     border: "none",
                     padding: "10px 20px",
                     textAlign: "center",
@@ -1128,12 +1282,22 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
               </div>
 
               <div className="mb-4">
-                <label className="block mb-2 text-sm font-medium text-gray-700">
+                <label
+                  className="block mb-2 text-sm font-medium"
+                  style={{ color: modalStyles.buttonColor || "#8A2BE2" }}
+                >
                   Donation Amount
                 </label>
                 <input
                   placeholder="Enter amount"
-                  className="w-full p-2 border border-gray-300 bg-white text-gray-700 rounded focus:border-purple-500 focus:ring-purple-500"
+                  className="w-full p-2 border border-gray-300 rounded placeholder:text-[color]"
+                  style={{
+                    color: modalStyles.buttonColor || "#8A2BE2", // Set input text color to button color
+                    backgroundColor: modalStyles.backgroundColor
+                      ? lightenColor(modalStyles.backgroundColor, 20)
+                      : "#f0f0f0", // Set input background to a lighter shade
+                  }}
+                  defaultValue={config.donationAmount ?? "0"}
                   onChange={(e) => setDonationAmount(e.target.value)}
                 />
               </div>
@@ -1144,7 +1308,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
                     onClick={submitDonation}
                     style={{
                       backgroundColor: modalStyles.buttonColor || "#8A2BE2",
-                      color: "white",
+                      color: modalStyles.textColor || "white",
                       border: "none",
                       padding: "10px 20px",
                       textAlign: "center",
@@ -1165,7 +1329,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
                     onClick={() => connectWallet()}
                     style={{
                       backgroundColor: modalStyles.buttonColor || "#8A2BE2",
-                      color: "white",
+                      color: modalStyles.textColor || "white",
                       border: "none",
                       padding: "10px 20px",
                       textAlign: "center",
@@ -1189,7 +1353,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
                   variant="outline"
                   style={{
                     backgroundColor: modalStyles.buttonColor || "#8A2BE2",
-                    color: "white",
+                    color: modalStyles.textColor || "white",
                     border: "none",
                     padding: "10px 20px",
                     textAlign: "center",
@@ -1214,7 +1378,7 @@ const DooglyDonateModal: React.FC<Omit<DooglyDonateProps, "web3Config">> = ({
 };
 
 // Type definitions for better developer experience
-export type { DooglyDonateProps, Web3Config };
+export type { DooglyProps, Web3Config };
 
 // Export utility functions for provider setup
 export const createCustomProvider = (url: string, chainId: number) => {
