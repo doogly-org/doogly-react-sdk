@@ -150,9 +150,9 @@ interface DooglyProps {
     destinationChain?: string;
     destinationAddress?: string;
     destinationOutputTokenAddress?: string;
-    donationAmount?: string;
-    donationChainId?: string;
-    donationToken?: string;
+    initialAmount?: string;
+    initialChainId?: string;
+    initialToken?: string;
   };
   projectId?: string;
   provider?: ethers.BrowserProvider | ethers.Provider;
@@ -237,22 +237,22 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
   const [initialized, setInitialized] = useState(false);
   const [config] = useState(initialConfig);
   const [currentToken, setCurrentToken] = useState<Token>(
-    config.donationToken
-      ? config.donationChainId
+    config.initialToken
+      ? config.initialChainId
         ? _tokens.find(
             (v: Token) =>
-              v.address.toLowerCase() == config.donationToken.toLowerCase() &&
-              v.chainId == config.donationChainId
+              v.address.toLowerCase() == config.initialToken.toLowerCase() &&
+              v.chainId == config.initialChainId
           )
-        : _tokens.find((v: Token) => v.address == config.donationToken)
+        : _tokens.find((v: Token) => v.address == config.initialToken)
       : undefined
   );
   const [currentChainId, setCurrentChainId] = useState<bigint | string>(
-    config.donationChainId ?? "1"
+    config.initialChainId ?? "1"
   );
 
   const [donationAmount, setDonationAmount] = useState(
-    config.donationAmount ?? "0"
+    config.initialAmount ?? "0"
   );
   const [submitButtonText, setSubmitButtonText] = useState("Donate");
   const [submitButtonDisabled, setSubmitButtonDisabled] = useState(false);
@@ -260,8 +260,8 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
   const [isTokenDropdownOpen, setIsTokenDropdownOpen] = useState(false);
   const [allTokens, setAllTokens] = useState<Token[]>();
   const [tokens, setTokens] = useState<Token[]>(
-    config.donationChainId
-      ? _tokens.filter((i: Token) => i.chainId == config.donationChainId)
+    config.initialChainId
+      ? _tokens.filter((i: Token) => i.chainId == config.initialChainId)
       : []
   );
   const [chains, setChains] = useState<ChainData[]>([]);
@@ -1297,7 +1297,7 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
                       ? lightenColor(modalStyles.backgroundColor, 20)
                       : "#f0f0f0", // Set input background to a lighter shade
                   }}
-                  defaultValue={config.donationAmount ?? "0"}
+                  defaultValue={config.initialAmount ?? "0"}
                   onChange={(e) => setDonationAmount(e.target.value)}
                 />
               </div>
