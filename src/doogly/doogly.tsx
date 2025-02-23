@@ -544,13 +544,15 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
       try {
         status = await getStatus(getStatusParams);
         console.log(`Route status: ${status?.squidTransactionStatus}`);
-        callback({
-          transactionId,
-          fromChainId,
-          toChainId,
-          requestId,
-          status: status?.squidTransactionStatus,
-        });
+        if (callback) {
+          callback({
+            transactionId,
+            fromChainId,
+            toChainId,
+            requestId,
+            status: status?.squidTransactionStatus,
+          });
+        }
       } catch (error) {
         if (error.response && error.response.status === 404) {
           retryCount++;
@@ -586,7 +588,6 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
         }
       );
       const requestId = result.data["x-request-id"]; // Retrieve request ID from response headers
-      console.log(requestId);
       return { data: result.data, requestId: requestId };
     } catch (error) {
       if (error.response) {
@@ -675,6 +676,18 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
                 tokenAddress?: `0x${string}`;
                 inputPos?: number;
               }) => {
+                if (
+                  i.callData.includes(
+                    "deadbeef1234567890abcdef1234567890abcdef"
+                  )
+                ) {
+                  i.callData = i.callData.replace(
+                    "deadbeef1234567890abcdef1234567890abcdef",
+                    ((signer as JsonRpcSigner).address as string)
+                      .substring(2)
+                      .toLowerCase()
+                  ) as `0x${string}`;
+                }
                 return {
                   chainType: "evm",
                   callType: i.callType ?? 0,
