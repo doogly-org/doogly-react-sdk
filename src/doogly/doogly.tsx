@@ -129,6 +129,23 @@ const erc20ContractABI = [
   },
 ];
 
+const permit2Abi = [
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "address", name: "spender", type: "address" },
+      { internalType: "uint160", name: "amount", type: "uint160" },
+      { internalType: "uint48", name: "expiration", type: "uint48" },
+    ],
+    name: "approve",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+];
+
+const permit2Address = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+
 interface Web3Config {
   provider?: ethers.JsonRpcProvider | ethers.BrowserProvider;
 }
@@ -499,7 +516,7 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
       return result.data;
     } catch (error: any) {
       if (error.response) {
-        console.error("API error:", error.response.data);
+        console.error("API error:", error.response.data.error);
       }
       console.error("Error with parameters:", params);
       throw error;
@@ -537,11 +554,14 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
       "needs_gas",
       "not_found",
     ];
+    const maxRecallCount = 5;
+    let recallCount = 0;
     const maxRetries = 10;
     let retryCount = 0;
 
     do {
       try {
+        recallCount++;
         status = await getStatus(getStatusParams);
         console.log(`Route status: ${status?.squidTransactionStatus}`);
         if (callback) {
@@ -552,6 +572,13 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
             requestId,
             status: status?.squidTransactionStatus,
           });
+        }
+
+        if (
+          status?.squidTransactionStatus == "ongoing" &&
+          recallCount == maxRecallCount
+        ) {
+          break;
         }
       } catch (error) {
         if (error.response && error.response.status === 404) {
@@ -591,10 +618,9 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
       return { data: result.data, requestId: requestId };
     } catch (error) {
       if (error.response) {
-        console.error("API error:", error.response.data);
+        console.error("API error:", error.response.data.error);
       }
-      console.error("Error with parameters:", params);
-      throw new Error(error.response.data);
+      throw new Error(error.response.data.error);
     }
   };
 
@@ -604,7 +630,7 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
       toToken: config.destinationOutputTokenAddress,
       toAddress: config.destinationAddress,
       enableBoost: String(true),
-      approveSpending: String(true),
+      // approveSpending: String(true),
       callback: callback.toString(),
     };
 
@@ -653,6 +679,12 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
           signer as JsonRpcSigner
         );
 
+        const permit2Contract = new ethers.Contract(
+          permit2Address,
+          permit2Abi,
+          signer as JsonRpcSigner
+        );
+
         let params = {
           fromAddress: (signer as JsonRpcSigner).address as string,
           fromChain: currentChainId?.toString(),
@@ -662,7 +694,7 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
           toToken: config.destinationOutputTokenAddress,
           toAddress: config.destinationAddress,
           enableBoost: true,
-          approveSpending: true,
+          // approveSpending: true,
         };
 
         if (postSwapHook) {
@@ -722,19 +754,32 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
           // @ts-ignore
           const currentAllowance = await erc20Contract.allowance(
             (signer as JsonRpcSigner)?.address,
-            (transactionRequest as OnChainExecutionData).target
+            permit2Address
           );
           // If current allowance is less than donation amount, request approval
           if (Number(currentAllowance) < donationAmount) {
             const approveTx = await erc20Contract.approve(
-              (transactionRequest as OnChainExecutionData).target,
-              donationAmount,
+              permit2Address,
+              ethers.MaxUint256,
               {
                 gasLimit: 500000,
               }
             );
             await approveTx.wait();
           }
+
+          // Call approve on Permit2 to target contract for donation amount with expiry
+          const expiry = Math.floor(Date.now() / 1000) + 300; // Current time + 5 minutes
+          const permitTx = await permit2Contract.approve(
+            inputTokenAddress,
+            (transactionRequest as OnChainExecutionData).target,
+            donationAmount,
+            expiry,
+            {
+              gasLimit: 500000,
+            }
+          );
+          await permitTx.wait();
         }
 
         const tx = await (signer as JsonRpcSigner).sendTransaction({
