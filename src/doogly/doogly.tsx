@@ -271,7 +271,9 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
   const [donationAmount, setDonationAmount] = useState(
     config.initialAmount ?? "0"
   );
-  const [submitButtonText, setSubmitButtonText] = useState("Donate");
+  const [submitButtonText, setSubmitButtonText] = useState(
+    buttonText ?? "Donate"
+  );
   const [submitButtonDisabled, setSubmitButtonDisabled] = useState(false);
   const [isChainDropdownOpen, setIsChainDropdownOpen] = useState(false);
   const [isTokenDropdownOpen, setIsTokenDropdownOpen] = useState(false);
@@ -599,6 +601,14 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
         await new Promise((resolve) => setTimeout(resolve, 5000));
       }
     } while (!completedStatuses.includes(status?.squidTransactionStatus));
+
+    if (status.toChain.transactionId) {
+      alert(
+        `Donation successful! Transaction hash: ${transactionId}. Transaction id on chain ${toChainId}: ${status.toChain.transactionId}`
+      );
+    } else {
+      alert(`Donation successful! Transaction hash: ${transactionId}`);
+    }
   };
 
   // Function to get the optimal route for the swap using Squid API
@@ -769,7 +779,7 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
           }
 
           // Call approve on Permit2 to target contract for donation amount with expiry
-          const expiry = Math.floor(Date.now() / 1000) + 300; // Current time + 5 minutes
+          const expiry = Math.floor(Date.now() / 1000) + 3000; // Current time + 5 minutes
           const permitTx = await permit2Contract.approve(
             inputTokenAddress,
             (transactionRequest as OnChainExecutionData).target,
@@ -785,8 +795,10 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
         const tx = await (signer as JsonRpcSigner).sendTransaction({
           to: transactionRequest.target,
           data: transactionRequest.data,
-          value: transactionRequest.value,
-          gasLimit: transactionRequest.gasLimit,
+          value:
+            (BigInt(transactionRequest.value) * BigInt("110")) / BigInt(100),
+          gasLimit:
+            (BigInt(transactionRequest.gasLimit) * BigInt("110")) / BigInt(100),
         });
 
         callWebhook({
@@ -803,8 +815,7 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
           config.destinationChain
         );
 
-        alert(`Donation successful! Transaction hash: ${tx.hash}`);
-        setSubmitButtonText("Donation Successful!");
+        setSubmitButtonText("Transaction Successful!");
       } else {
         if (
           getChainData(chains, currentChainId.toString()).chainType ==
@@ -1106,7 +1117,7 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
       alert(`Donation failed. Please try again. Error: ${error}`);
     } finally {
       setSubmitButtonDisabled(false);
-      setSubmitButtonText("Donate");
+      setSubmitButtonText(buttonText ?? "Donate");
     }
   }
 
