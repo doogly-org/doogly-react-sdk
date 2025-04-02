@@ -45,6 +45,14 @@ export default [
       'wagmi',
       'viem',
       '@rainbow-me/rainbowkit',
+      'axios',
+      '@solana/web3.js',
+      '@cosmjs/stargate',
+      '@ethersproject/abstract-signer',
+      '@ethersproject/wallet',
+      '@project-serum/anchor',
+      'bitcoinjs-lib',
+      'tiny-secp256k1'
     ],
   },
   {

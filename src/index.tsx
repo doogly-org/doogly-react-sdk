@@ -1,9 +1,7 @@
 export {
-  DooglyDonateProps,
+  DooglyProps,
   Web3Config,
   createCustomProvider,
   createBrowserProvider,
-  DooglyDonateButton,
-  DooglyTippingProps,
-  DooglyTippingButton,
+  DooglyButton,
 } from "./doogly/doogly";
