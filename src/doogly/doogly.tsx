@@ -287,6 +287,14 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
   const [connected, setConnected] = useState(false);
   const [chainSearchQuery, setChainSearchQuery] = useState("");
   const [tokenSearchQuery, setTokenSearchQuery] = useState("");
+  const [quoteData, setQuoteData] = useState<any>(null);
+  const [showQuote, setShowQuote] = useState(false);
+  const [showTransactionStatus, setShowTransactionStatus] = useState(false);
+  const [sourceChainTxHash, setSourceChainTxHash] = useState("");
+  const [destinationChainTxHash, setDestinationChainTxHash] = useState("");
+  const [estimatedDuration, setEstimatedDuration] = useState(0);
+  const [timeRemaining, setTimeRemaining] = useState(0);
+  const [transactionComplete, setTransactionComplete] = useState(false);
   // const [bitcoinAddress, setBitcoinAddress] = useState("");
 
   const QRLink = `https://app.doogly.org/donate/v2`;
@@ -533,6 +541,9 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
     toChainId: string,
     bridgeType?: string
   ) => {
+    setSourceChainTxHash(transactionId);
+    setShowTransactionStatus(true);
+
     const getStatusParams = bridgeType
       ? {
           transactionId,
@@ -548,7 +559,6 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
           toChainId,
         };
 
-    console.log(getStatusParams);
     let status;
     const completedStatuses = [
       "success",
@@ -556,16 +566,21 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
       "needs_gas",
       "not_found",
     ];
-    const maxRecallCount = 5;
-    let recallCount = 0;
     const maxRetries = 10;
     let retryCount = 0;
 
+    // Set initial estimated duration and time remaining
+    setEstimatedDuration(Math.floor(quoteData.estimatedRouteDuration));
+    setTimeRemaining(Math.floor(quoteData.estimatedRouteDuration));
+
     do {
       try {
-        recallCount++;
         status = await getStatus(getStatusParams);
-        console.log(`Route status: ${status?.squidTransactionStatus}`);
+
+        if (status?.toChain?.transactionId) {
+          setDestinationChainTxHash(status.toChain.transactionId);
+        }
+
         if (callback) {
           callback({
             transactionId,
@@ -575,13 +590,6 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
             status: status?.squidTransactionStatus,
           });
         }
-
-        if (
-          status?.squidTransactionStatus == "ongoing" &&
-          recallCount == maxRecallCount
-        ) {
-          break;
-        }
       } catch (error) {
         if (error.response && error.response.status === 404) {
           retryCount++;
@@ -589,7 +597,6 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
             console.error("Max retries reached. Transaction not found.");
             break;
           }
-          console.log("Transaction not found. Retrying...");
           await new Promise((resolve) => setTimeout(resolve, 5000));
           continue;
         } else {
@@ -602,13 +609,7 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
       }
     } while (!completedStatuses.includes(status?.squidTransactionStatus));
 
-    if (status.toChain.transactionId) {
-      alert(
-        `Donation successful! Transaction hash: ${transactionId}. Transaction id on chain ${toChainId}: ${status.toChain.transactionId}`
-      );
-    } else {
-      alert(`Donation successful! Transaction hash: ${transactionId}`);
-    }
+    setTransactionComplete(true);
   };
 
   // Function to get the optimal route for the swap using Squid API
@@ -663,6 +664,274 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
     setQrLink(QRLinkWithParams);
   }
 
+  async function getQuoteForDonation() {
+    const amount = donationAmount;
+    if (!amount) return;
+
+    setSubmitButtonDisabled(true);
+    setSubmitButtonText("Getting Quote...");
+
+    try {
+      const donationAmount = ethers.parseUnits(
+        String(amount),
+        currentToken.decimals
+      );
+
+      let params = {
+        fromAddress:
+          typeof signer === "string"
+            ? signer
+            : (signer as JsonRpcSigner).address,
+        fromChain: currentChainId?.toString(),
+        fromToken: currentToken?.address as string,
+        fromAmount: donationAmount.toString(),
+        toChain: config.destinationChain,
+        toToken: config.destinationOutputTokenAddress,
+        toAddress: config.destinationAddress,
+        enableBoost: true,
+        quoteOnly: true, // Add this to get quote only
+      };
+
+      if (postSwapHook) {
+        params["postHook"] = {
+          chainType: ChainType.EVM,
+          calls: postSwapHook.map(
+            (i: {
+              target: `0x${string}`;
+              callData: `0x${string}`;
+              callType?: number;
+              tokenAddress?: `0x${string}`;
+              inputPos?: number;
+            }) => {
+              if (
+                i.callData.includes("deadbeef1234567890abcdef1234567890abcdef")
+              ) {
+                i.callData = i.callData.replace(
+                  "deadbeef1234567890abcdef1234567890abcdef",
+                  ((signer as JsonRpcSigner).address as string)
+                    .substring(2)
+                    .toLowerCase()
+                ) as `0x${string}`;
+              }
+              return {
+                chainType: "evm",
+                callType: i.callType ?? 0,
+                target: i.target,
+                value: "0",
+                callData: i.callData,
+                payload: {
+                  tokenAddress: i.tokenAddress ?? "",
+                  inputPos: i.inputPos ?? 0,
+                },
+                estimatedGas: "50000",
+              };
+            }
+          ),
+          provider: "Doogly", //This should be the name of your product or application that is triggering the hook
+          description: "Cross chain contract call",
+          logoURI: "",
+        };
+      }
+
+      const routeResult = await getRoute(params);
+      setQuoteData(routeResult.data.route.estimate);
+      setShowQuote(true);
+    } catch (error) {
+      console.error("Failed to get quote:", error);
+      alert(`Failed to get quote. Please try again. Error: ${error}`);
+    } finally {
+      setSubmitButtonDisabled(false);
+      setSubmitButtonText(buttonText ?? "Get Quote");
+    }
+  }
+
+  const QuoteDisplay = () => (
+    <div
+      className="space-y-4 p-4 border rounded-md"
+      style={{ color: modalStyles.textColor || "black" }}
+    >
+      <h3
+        className="font-bold"
+        style={{ color: modalStyles.textColor || "black" }}
+      >
+        Transaction Quote
+      </h3>
+      <div>
+        <p style={{ color: modalStyles.textColor || "black" }}>
+          You will send:{" "}
+          {ethers.formatUnits(quoteData.fromAmount, currentToken.decimals)}{" "}
+          {currentToken.symbol}
+        </p>
+        <p style={{ color: modalStyles.textColor || "black" }}>
+          Recipient will receive:{" "}
+          {ethers.formatUnits(quoteData.toAmount, quoteData.toToken.decimals)}{" "}
+          {quoteData.toToken.symbol}
+        </p>
+        <p style={{ color: modalStyles.textColor || "black" }}>
+          Estimated Gas Fee:{" "}
+          {ethers.formatEther(quoteData.gasCosts[0].amount || "0")}{" "}
+          {quoteData.fromToken.symbol}
+        </p>
+      </div>
+      <div className="flex justify-between mt-4">
+        <Button
+          onClick={() => {
+            setShowQuote(false);
+            setQuoteData(null);
+          }}
+          style={{
+            backgroundColor: modalStyles.buttonColor || "#8A2BE2",
+            color: modalStyles.backgroundColor || "white",
+            border: "none",
+            padding: "10px 20px",
+            textAlign: "center",
+            textDecoration: "none",
+            display: "inline-block",
+            fontSize: "16px",
+            margin: "4px 2px",
+            cursor: "pointer",
+            borderRadius: "5px",
+            transition: "background-color 0.3s ease",
+          }}
+        >
+          Cancel
+        </Button>
+        <Button
+          onClick={submitDonation}
+          style={{
+            backgroundColor: modalStyles.buttonColor || "#8A2BE2",
+            color: modalStyles.backgroundColor || "white",
+            border: "none",
+            padding: "10px 20px",
+            textAlign: "center",
+            textDecoration: "none",
+            display: "inline-block",
+            fontSize: "16px",
+            margin: "4px 2px",
+            cursor: "pointer",
+            borderRadius: "5px",
+            transition: "background-color 0.3s ease",
+          }}
+          disabled={submitButtonDisabled}
+        >
+          {submitButtonText}
+        </Button>
+      </div>
+    </div>
+  );
+
+  const TransactionStatusModal = () => {
+    const [showDetails, setShowDetails] = useState(false);
+    const sourceChain = getChainData(chains, currentChainId.toString());
+    const destChain = getChainData(chains, config.destinationChain);
+
+    const sourceExplorerUrl = `${sourceChain.blockExplorerUrls[0]}tx/${sourceChainTxHash}`;
+    const destExplorerUrl = destinationChainTxHash
+      ? `${destChain.blockExplorerUrls[0]}tx/${destinationChainTxHash}`
+      : "";
+
+    useEffect(() => {
+      const timer = setInterval(() => {
+        setTimeRemaining((prev) => Math.max(0, prev - 1));
+      }, 1000);
+
+      return () => clearInterval(timer);
+    }, []);
+
+    return (
+      <div
+        className="space-y-4 p-4 border rounded-md"
+        style={{ color: modalStyles.textColor || "black" }}
+      >
+        <h3
+          className="font-bold"
+          style={{ color: modalStyles.headingColor || "#8A2BE2" }}
+        >
+          Transaction Status
+        </h3>
+
+        {/* Transaction progress graphic */}
+        <div className="flex items-center justify-center space-x-4 my-4">
+          <img
+            src={sourceChain.chainIconURI}
+            alt="Source Chain Logo"
+            className="w-8 h-8 rounded-full"
+          />
+          <div className="flex items-center">
+            <div className="w-8 border-t border-gray-400"></div>X
+            <div className="w-8 border-t border-gray-400"></div>
+          </div>
+          <img
+            src={destChain.chainIconURI}
+            alt="Destination Chain Logo"
+            className="w-8 h-8 rounded-full"
+          />
+        </div>
+
+        <div className="w-full bg-gray-200 rounded-full h-2.5">
+          <div
+            className="bg-[#8A2BE2] h-2.5 rounded-full"
+            style={{
+              width: `${Math.max(
+                0,
+                Math.min(
+                  100,
+                  ((estimatedDuration - timeRemaining) / estimatedDuration) *
+                    100
+                )
+              )}%`,
+              backgroundColor: modalStyles.buttonColor || "#8A2BE2",
+            }}
+          ></div>
+        </div>
+
+        <button
+          onClick={() => setShowDetails(!showDetails)}
+          className="mt-2 text-[#8A2BE2] hover:underline"
+        >
+          {showDetails ? "Hide Details" : "Show Details"}
+        </button>
+
+        {transactionComplete ? (
+          <p className="mt-4 text-green-600">Transaction Complete!</p>
+        ) : null}
+
+        {showDetails && (
+          <div className="space-y-2">
+            <p>Source Chain Transaction:</p>
+            <a
+              href={sourceExplorerUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-500 hover:underline break-all"
+            >
+              {sourceChainTxHash}
+            </a>
+
+            {!transactionComplete ? (
+              <p className="mt-4">
+                Estimated time remaining: {Math.floor(timeRemaining / 60)}m{" "}
+                {timeRemaining % 60}s
+              </p>
+            ) : (
+              <>
+                <p>Destination Chain Transaction:</p>
+                <a
+                  href={destExplorerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-500 hover:underline break-all"
+                >
+                  {destinationChainTxHash}
+                </a>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   async function submitDonation() {
     const amount = donationAmount;
     if (!amount) return;
@@ -704,7 +973,6 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
           toToken: config.destinationOutputTokenAddress,
           toAddress: config.destinationAddress,
           enableBoost: true,
-          // approveSpending: true,
         };
 
         if (postSwapHook) {
@@ -745,7 +1013,7 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
               }
             ),
             provider: "Doogly", //This should be the name of your product or application that is triggering the hook
-            description: "Cross-chain donation",
+            description: "Cross chain contract call",
             logoURI: "",
           };
         }
@@ -1191,7 +1459,9 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
             </button>
           </DialogTitle>
 
-          {showQR ? (
+          {showTransactionStatus ? (
+            <TransactionStatusModal />
+          ) : showQR ? (
             <div className="flex flex-col gap-y-5 items-center p-4">
               <QRCodeSVG value={qrLink} size={256} />
               <Button
@@ -1200,7 +1470,7 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
                 }}
                 style={{
                   backgroundColor: modalStyles.buttonColor || "#8A2BE2",
-                  color: modalStyles.textColor || "white",
+                  color: modalStyles.backgroundColor || "white",
                   border: "none",
                   padding: "10px 20px",
                   textAlign: "center",
@@ -1214,7 +1484,7 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
                 }}
                 className="mt-4"
               >
-                Back to Donation Form
+                Back to Form
               </Button>
             </div>
           ) : (
@@ -1224,7 +1494,7 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
                   className={`rounded-md w-full flex justify-center`}
                   style={{
                     backgroundColor: modalStyles.buttonColor || "#8A2BE2",
-                    color: modalStyles.textColor || "white",
+                    color: modalStyles.backgroundColor || "white",
                     border: "none",
                     padding: "10px 20px",
                     textAlign: "center",
@@ -1238,7 +1508,10 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
                   }}
                   onClick={() => setIsChainDropdownOpen(!isChainDropdownOpen)}
                 >
-                  <div className="mx-3 text-white">
+                  <div
+                    className="mx-3"
+                    style={{ color: modalStyles.backgroundColor || "white" }}
+                  >
                     {currentChainId
                       ? getChainData(chains, currentChainId.toString())
                           ?.networkName
@@ -1290,7 +1563,7 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
                   className={`rounded-md w-full flex justify-center`}
                   style={{
                     backgroundColor: modalStyles.buttonColor || "#8A2BE2",
-                    color: modalStyles.textColor || "white",
+                    color: modalStyles.backgroundColor || "white",
                     border: "none",
                     padding: "10px 20px",
                     textAlign: "center",
@@ -1306,7 +1579,10 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
                     setIsTokenDropdownOpen(!isTokenDropdownOpen);
                   }}
                 >
-                  <div className="mx-3 text-white">
+                  <div
+                    className="mx-3"
+                    style={{ color: modalStyles.backgroundColor || "white" }}
+                  >
                     {currentToken?.symbol ?? "Select Token"}
                   </div>
                 </button>
@@ -1361,23 +1637,71 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
                   placeholder="Enter amount"
                   className="w-full p-2 border border-gray-300 rounded placeholder:text-[color]"
                   style={{
-                    color: modalStyles.buttonColor || "#8A2BE2", // Set input text color to button color
+                    color: modalStyles.buttonColor || "#8A2BE2",
                     backgroundColor: modalStyles.backgroundColor
                       ? lightenColor(modalStyles.backgroundColor, 20)
-                      : "#f0f0f0", // Set input background to a lighter shade
+                      : "#f0f0f0",
                   }}
                   defaultValue={config.initialAmount ?? "0"}
                   onChange={(e) => setDonationAmount(e.target.value)}
                 />
               </div>
 
-              <div className="flex justify-between mt-4">
-                {connected ? (
+              {showQuote ? (
+                <QuoteDisplay />
+              ) : (
+                <div className="flex justify-between mt-4">
+                  {connected ? (
+                    <Button
+                      onClick={getQuoteForDonation}
+                      style={{
+                        backgroundColor: modalStyles.buttonColor || "#8A2BE2",
+                        color: modalStyles.backgroundColor || "white",
+                        border: "none",
+                        padding: "10px 20px",
+                        textAlign: "center",
+                        textDecoration: "none",
+                        display: "inline-block",
+                        fontSize: "16px",
+                        margin: "4px 2px",
+                        cursor: "pointer",
+                        borderRadius: "5px",
+                        transition: "background-color 0.3s ease",
+                      }}
+                      disabled={submitButtonDisabled}
+                    >
+                      Get Quote
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={() => connectWallet()}
+                      style={{
+                        backgroundColor: modalStyles.buttonColor || "#8A2BE2",
+                        color: modalStyles.backgroundColor || "white",
+                        border: "none",
+                        padding: "10px 20px",
+                        textAlign: "center",
+                        textDecoration: "none",
+                        display: "inline-block",
+                        fontSize: "16px",
+                        margin: "4px 2px",
+                        cursor: "pointer",
+                        borderRadius: "5px",
+                        transition: "background-color 0.3s ease",
+                      }}
+                    >
+                      Connect Wallet
+                    </Button>
+                  )}
                   <Button
-                    onClick={submitDonation}
+                    onClick={() => {
+                      setShowQR(true);
+                      generateQRLink();
+                    }}
+                    variant="outline"
                     style={{
                       backgroundColor: modalStyles.buttonColor || "#8A2BE2",
-                      color: modalStyles.textColor || "white",
+                      color: modalStyles.backgroundColor || "white",
                       border: "none",
                       padding: "10px 20px",
                       textAlign: "center",
@@ -1389,55 +1713,11 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
                       borderRadius: "5px",
                       transition: "background-color 0.3s ease",
                     }}
-                    disabled={submitButtonDisabled}
                   >
-                    {submitButtonText}
+                    Show QR Code
                   </Button>
-                ) : (
-                  <Button
-                    onClick={() => connectWallet()}
-                    style={{
-                      backgroundColor: modalStyles.buttonColor || "#8A2BE2",
-                      color: modalStyles.textColor || "white",
-                      border: "none",
-                      padding: "10px 20px",
-                      textAlign: "center",
-                      textDecoration: "none",
-                      display: "inline-block",
-                      fontSize: "16px",
-                      margin: "4px 2px",
-                      cursor: "pointer",
-                      borderRadius: "5px",
-                      transition: "background-color 0.3s ease",
-                    }}
-                  >
-                    Connect Wallet
-                  </Button>
-                )}
-                <Button
-                  onClick={() => {
-                    setShowQR(true);
-                    generateQRLink();
-                  }}
-                  variant="outline"
-                  style={{
-                    backgroundColor: modalStyles.buttonColor || "#8A2BE2",
-                    color: modalStyles.textColor || "white",
-                    border: "none",
-                    padding: "10px 20px",
-                    textAlign: "center",
-                    textDecoration: "none",
-                    display: "inline-block",
-                    fontSize: "16px",
-                    margin: "4px 2px",
-                    cursor: "pointer",
-                    borderRadius: "5px",
-                    transition: "background-color 0.3s ease",
-                  }}
-                >
-                  Show QR Code
-                </Button>
-              </div>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>

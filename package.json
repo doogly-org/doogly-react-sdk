@@ -1,6 +1,6 @@
 {
   "name": "@doogly/react",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "A React component for Doogly with QR code support.",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
