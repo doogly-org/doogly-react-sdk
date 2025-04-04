@@ -327,7 +327,7 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config" | "privyAppId">> = ({
   const [tokens, setTokens] = useState<Token[]>(
     config.initialChainId
       ? _tokens.filter((i: Token) => i.chainId == config.initialChainId)
-      : []
+      : _tokens.filter((i: Token) => i.chainId == "1")
   );
   const [chains, setChains] = useState<ChainData[]>([]);
   const [connected, setConnected] = useState(false);
