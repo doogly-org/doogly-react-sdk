@@ -52,7 +52,8 @@ export default [
       '@ethersproject/wallet',
       '@project-serum/anchor',
       'bitcoinjs-lib',
-      'tiny-secp256k1'
+      'tiny-secp256k1',
+      '@privy-io/react-auth'
     ],
   },
   {

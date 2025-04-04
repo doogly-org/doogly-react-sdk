@@ -25,6 +25,7 @@
     "@cosmjs/stargate": "^0.33.0",
     "@ethersproject/abstract-signer": "^5.7.0",
     "@ethersproject/wallet": "^5.7.0",
+    "@privy-io/react-auth": "^2.8.0",
     "@project-serum/anchor": "^0.26.0",
     "@radix-ui/react-dialog": "^1.1.2",
     "@radix-ui/react-label": "^2.1.0",

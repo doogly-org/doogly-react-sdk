@@ -20,12 +20,34 @@ import {
   VersionedTransaction,
 } from "@solana/web3.js";
 import { tokenList } from "../constants";
+import { PrivyProvider, usePrivy, useWallets } from "@privy-io/react-auth";
+import {
+  optimism,
+  base,
+  celo,
+  arbitrum,
+  mainnet,
+  bsc,
+  polygon,
+  avalanche,
+  linea,
+  scroll,
+  mantle,
+  blast,
+  immutableZkEvm,
+  fraxtal,
+  moonbeam,
+  fantom,
+  filecoin,
+  kava,
+} from "viem/chains";
+
 // import * as bitcoin from "bitcoinjs-lib";
 // import * as ecc from "tiny-secp256k1";
 
 declare global {
   interface Window {
-    ethereum: Eip1193Provider;
+    ethereum?: any;
     solana?: {
       isPhantom?: boolean;
       connect(): Promise<{ publicKey: { toString(): string } }>;
@@ -172,7 +194,7 @@ interface DooglyProps {
     initialToken?: string;
   };
   projectId?: string;
-  provider?: ethers.BrowserProvider | ethers.Provider;
+  provider?: Eip1193Provider;
   signer?: ethers.JsonRpcSigner;
   modalStyles?: {
     backgroundColor?: string;
@@ -191,6 +213,7 @@ interface DooglyProps {
   webhookUrl?: string;
   webHookData?: string;
   callback?: (transactionCallback: transactionCallback) => void;
+  privyAppId?: string;
 }
 
 const _tokens = tokenList;
@@ -201,35 +224,57 @@ const _tokens = tokenList;
 //   purpose: "payment" | "ordinals";
 // };
 
-export const DooglyButton: React.FC<DooglyProps> = ({
-  buttonText = "Donate with Crypto",
-  buttonClassName = "",
-  modalTitle = "Make a Donation",
-  config: initialConfig = {},
-  modalStyles = {},
-  apiUrl,
-  postSwapHook,
-  webhookUrl,
-  webHookData,
-  callback,
-}) => {
+export const DooglyButton: React.FC<DooglyProps> = (props) => {
+  const {
+    privyAppId = "cm4qzfzmc02fltw2fjx7n4201", // Default app ID if none provided
+    ...otherProps
+  } = props;
+
   return (
-    <DooglyModal
-      buttonText={buttonText}
-      buttonClassName={buttonClassName}
-      modalTitle={modalTitle}
-      config={initialConfig}
-      modalStyles={modalStyles}
-      apiUrl={apiUrl}
-      postSwapHook={postSwapHook}
-      callback={callback}
-      webhookUrl={webhookUrl}
-      webHookData={webHookData}
-    />
+    <PrivyProvider
+      appId={privyAppId}
+      config={{
+        appearance: {
+          theme: "light",
+          accentColor: "#8A2BE2",
+        },
+        embeddedWallets: {
+          createOnLogin: "users-without-wallets",
+        },
+        externalWallets: {
+          coinbaseWallet: {
+            connectionOptions: "all",
+          },
+        },
+        defaultChain: mainnet,
+        supportedChains: [
+          optimism,
+          base,
+          celo,
+          arbitrum,
+          mainnet,
+          bsc,
+          polygon,
+          avalanche,
+          linea,
+          scroll,
+          mantle,
+          blast,
+          immutableZkEvm,
+          fraxtal,
+          moonbeam,
+          fantom,
+          filecoin,
+          kava,
+        ],
+      }}
+    >
+      <DooglyModal {...otherProps} />
+    </PrivyProvider>
   );
 };
 
-const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
+const DooglyModal: React.FC<Omit<DooglyProps, "web3Config" | "privyAppId">> = ({
   buttonText,
   buttonClassName,
   modalTitle,
@@ -240,6 +285,7 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
   webhookUrl,
   webHookData,
   callback,
+  provider: injectedProvider,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [showQR, setShowQR] = useState(false);
@@ -295,7 +341,6 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
   const [estimatedDuration, setEstimatedDuration] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [transactionComplete, setTransactionComplete] = useState(false);
-  // const [bitcoinAddress, setBitcoinAddress] = useState("");
 
   const QRLink = `https://app.doogly.org/donate/v2`;
 
@@ -303,18 +348,84 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
     baseUrl: apiUrl,
   });
 
+  const { login, authenticated } = usePrivy();
+  const { wallets } = useWallets();
+
+  const initializeProvider = async (provider: Eip1193Provider) => {
+    try {
+      const web3Provider = new ethers.BrowserProvider(provider);
+      const signer = await web3Provider.getSigner();
+      const net = await web3Provider.getNetwork();
+      setNetwork(net);
+      setSigner(signer);
+      setProvider(web3Provider);
+      setConnected(true);
+    } catch (e) {
+      console.error("Failed to initialize provider:", e);
+    }
+  };
+
+  const connectWallet = async () => {
+    try {
+      if (currentChainId === "solana-mainnet-beta") {
+        // Try Phantom first
+        const { solana } = window as any;
+        if (solana?.isPhantom) {
+          const response = await solana.connect();
+          const provider = response.publicKey.toString();
+          setSigner(provider);
+          setProvider(solana);
+          setConnected(true);
+          return;
+        }
+
+        // If no Phantom, try Privy
+        if (!authenticated) {
+          await login();
+          return;
+        }
+
+        window.open("https://phantom.app/", "_blank");
+        return;
+      }
+
+      // For EVM chains
+      if (injectedProvider) {
+        await initializeProvider(injectedProvider);
+      } else if (window.ethereum) {
+        await window.ethereum.request({ method: "eth_requestAccounts" });
+        await initializeProvider(window.ethereum);
+      } else {
+        // Use Privy as fallback
+        if (!authenticated) {
+          await login();
+          return;
+        }
+
+        const wallet = await wallets[0]?.getEthereumProvider();
+        if (wallet) {
+          window.ethereum = wallet;
+          await initializeProvider(wallet);
+        } else {
+          alert("Please install MetaMask or use a Web3 enabled browser!");
+        }
+      }
+    } catch (error) {
+      console.error("Error connecting wallet:", error);
+      alert("Failed to connect wallet. Please try again.");
+    }
+  };
+
   useEffect(() => {
     const updateProviders = async () => {
-      try {
-        const web3Provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await web3Provider.getSigner();
-        const net = await web3Provider.getNetwork();
-        setNetwork(net);
-        setSigner(signer);
-        setProvider(web3Provider);
-        setConnected(true);
-      } catch (e) {
-        console.error(e);
+      if (injectedProvider) {
+        await initializeProvider(injectedProvider);
+      } else if (window.ethereum) {
+        try {
+          await initializeProvider(window.ethereum);
+        } catch (e) {
+          console.error(e);
+        }
       }
     };
 
@@ -346,7 +457,7 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
       updateProviders();
       setInitialized(true);
     }
-  });
+  }, [initialized, injectedProvider]);
 
   useEffect(() => {
     const fetchTokensAndSwitchChain = async (chain: string) => {
@@ -377,24 +488,29 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
 
   async function switchChainEVM(chainId: number) {
     try {
-      await window.ethereum.request({
+      const activeProvider = injectedProvider || window.ethereum;
+      if (!activeProvider) {
+        throw new Error("No Web3 provider available");
+      }
+
+      await activeProvider.request({
         method: "wallet_switchEthereumChain",
         params: [{ chainId: `0x${chainId.toString(16)}` }],
       });
 
-      const web3Provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await web3Provider.getSigner();
-      const net = await web3Provider.getNetwork();
-      setNetwork(net);
-      setSigner(signer);
-      setProvider(web3Provider);
-      setConnected(true);
+      await initializeProvider(activeProvider);
     } catch (switchError) {
-      // This error code indicates that the chain has not been added to MetaMask.
+      // This error code indicates that the chain has not been added to the wallet
       if (switchError.code === 4902) {
         try {
           const chainData = getChainData(chains, chainId);
-          await window.ethereum.request({
+          const activeProvider = injectedProvider || window.ethereum;
+
+          if (!activeProvider) {
+            throw new Error("No Web3 provider available");
+          }
+
+          await activeProvider.request({
             method: "wallet_addEthereumChain",
             params: [
               {
@@ -408,10 +524,10 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
             ],
           });
         } catch (addError) {
-          throw new Error("Failed to add the network to MetaMask");
+          throw new Error("Failed to add the network to wallet");
         }
       } else {
-        throw new Error("Failed to switch network in MetaMask");
+        throw new Error("Failed to switch network");
       }
     }
   }
@@ -420,55 +536,6 @@ const DooglyModal: React.FC<Omit<DooglyProps, "web3Config">> = ({
     chains: ChainData[],
     chainId: number | string
   ): ChainData | undefined => chains?.find((chain) => chain.chainId == chainId);
-
-  const connectWallet = async () => {
-    try {
-      if (currentChainId === "solana-mainnet-beta") {
-        // Connect to Solana wallet (Phantom)
-        const { solana } = window as any;
-        if (!solana?.isPhantom) {
-          window.open("https://phantom.app/", "_blank");
-          return;
-        }
-
-        const response = await solana.connect();
-        const provider = response.publicKey.toString();
-        setSigner(provider);
-        setProvider(solana);
-        setConnected(true);
-        // } else if (currentChainId === "bitcoin") {
-        //   // Connect to Bitcoin wallet (PhantomBTC)
-        //   const { bitcoin } = window.phantom as any;
-        //   if (!bitcoin) {
-        //     window.open("https://phantom.app/", "_blank");
-        //     return;
-        //   }
-
-        //   const response: BtcAccount[] = await bitcoin.requestAccounts();
-        //   const provider = response[0].publicKey.toString();
-        //   setSigner(provider);
-        //   setBitcoinAddress(response[0].address);
-        //   setProvider(bitcoin);
-        //   setConnected(true);
-      } else {
-        // Default EVM wallet connection
-        if (!window.ethereum) {
-          alert("Please install MetaMask!");
-          return;
-        }
-
-        const web3Provider = new ethers.BrowserProvider(window.ethereum);
-        await window.ethereum.request({ method: "eth_requestAccounts" });
-        const signer = await web3Provider.getSigner();
-        setSigner(signer);
-        setProvider(web3Provider);
-        setConnected(true);
-      }
-    } catch (error) {
-      console.error("Error connecting wallet:", error);
-      alert("Failed to connect wallet. Please try again.");
-    }
-  };
 
   // Function to get deposit address for Solana and BTC
   const getDepositAddress = async (transactionRequest: any) => {
